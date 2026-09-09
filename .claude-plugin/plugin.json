@@ -1,0 +1,14 @@
+{
+  "name": "herdr-dispatch",
+  "description": "A simple plugin for dispatch task in Claude Code",
+  "version": "0.0.1",
+  "author": {
+    "name": "Bestony",
+    "email": "bestony@linux.com",
+    "url": "https://github.com/bestony"
+  },
+  "homepage": "https://github.com/bestony/herdr-dispatch",
+  "repository": "https://github.com/bestony/herdr-dispatch",
+  "license": "MIT",
+  "keywords": ["herdr", "worker","orchestrator"]
+}
