@@ -224,4 +224,4 @@ the same thing wherever you are. Adding a fourth agent means writing one `SKILL.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
