@@ -1,0 +1,16 @@
+{
+  "name": "herdr-dispatch",
+  "description": "Orchestrate parallel coding agents in isolated herdr worktrees, from plan to pull request",
+  "owner": {
+    "name": "Bestony",
+    "email": "bestony@linux.com",
+    "url": "https://github.com/bestony"
+  },
+  "plugins": [
+    {
+      "name": "herdr-dispatch",
+      "source": "./",
+      "description": "Dispatch tasks to codex / grok / opencode agents running in isolated herdr worktrees, supervise them to completion, then push each lane and open its pull request"
+    }
+  ]
+}
