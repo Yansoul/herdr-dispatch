@@ -1,7 +1,7 @@
 # Grok driver — §5a, §5c, §6a, §6c, §6d, §6g, §6h
 
 Everything in `dispatch-grok` that depends on grok itself. The agent-independent halves are
-`../../_shared/plan.md` (§2–§4, §5b) and `../../_shared/supervise.md` (§6b, §6e, §6f, §6i, §7, §8);
+`references/plan.md` (§2–§4, §5b) and `references/supervise.md` (§6b, §6e, §6f, §6i, §7, §8);
 §0 and §1 are in `../SKILL.md`.
 
 Sources for the claims below: grok's own bundled user guide at `~/.grok/docs/user-guide/` (notably
@@ -41,7 +41,7 @@ matches output arriving *after* the call, so it times out on a command that alre
   (Note `[session] load_envrc` in `~/.grok/config.toml`: grok may load `.envrc` itself, which is not
   a reason to skip this check.)
 
-Then write the brief (§5b in `../../_shared/plan.md`) before launching.
+Then write the brief (§5b in `references/plan.md`) before launching.
 
 ---
 
@@ -125,7 +125,7 @@ Which case applies changes the supervision regime, so record it per lane:
 
 - **goal set** — grok works across rounds toward the objective and only marks it complete after an
   independent evidence review, so a silent lane may legitimately be mid-pursuit; nudges are a repair
-  path. This is the *autonomous* regime `../../_shared/supervise.md` §7 describes.
+  path. This is the *autonomous* regime `references/supervise.md` §7 describes.
 - **goal skipped** — the lane stops at the end of each turn and the sweep's continuation prompt is
   the engine (§6c `idle_incomplete`, §6d).
 

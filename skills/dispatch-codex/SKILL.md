@@ -26,15 +26,14 @@ of them, so a cross-reference means the same thing wherever you are:
 | Sections | File | Read it |
 | --- | --- | --- |
 | §0 invariants, §1 gate and parse | this file | always, and §0 again at the start of every sweep |
-| §2–§4, §5b | `../_shared/plan.md` | on a fresh dispatch, before creating anything |
+| §2–§4, §5b | `references/plan.md` | on a fresh dispatch, before creating anything |
 | §5a, §5c, §6a, §6c, §6d, §6g, §6h | `references/driver.md` | everything codex-specific: launch, probe, classify, steer |
-| §6b, §6e, §6f, §6i, §7, §8 | `../_shared/supervise.md` | before the first supervision sweep |
+| §6b, §6e, §6f, §6i, §7, §8 | `references/supervise.md` | before the first supervision sweep |
 
-`../_shared/` is a sibling directory of this skill's own directory — the two shared files are part of
-the same plugin and are read by path, not invoked.
-
-A `--resume` invocation runs §0 and §1 here, then reads `references/driver.md` and
-`../_shared/supervise.md` and goes straight to §6; it never needs `../_shared/plan.md`.
+`references/plan.md` and `references/supervise.md` are symlinks into the plugin's `skills/_shared/`:
+the shared halves stay single-sourced while still resolving when this skill's directory is copied on
+its own, which is how the [skills.sh](https://skills.sh) installer places it. Both are read by path,
+not invoked.
 
 ## §0 Invariants — reread every sweep, never work from memory
 
@@ -96,7 +95,7 @@ been dispatched under an isolation model they did not expect.
 With `--resume`, first locate the run — conversation memory may be gone (§0.1): scan
 `~/.claude/dispatch-codex/*/state.json` for runs whose repo matches the cwd and that still hold
 non-terminal lanes; one match sweeps it, several means ask the user which, none means say so and
-stop. Then read `references/driver.md` and `../_shared/supervise.md` and go to §6. With no task text
+stop. Then read `references/driver.md` and `references/supervise.md` and go to §6. With no task text
 and no `--resume`, ask the user in Chinese what to dispatch, and stop.
 
-Otherwise — a fresh dispatch — read `../_shared/plan.md` now and continue at §2.
+Otherwise — a fresh dispatch — read `references/plan.md` now and continue at §2.

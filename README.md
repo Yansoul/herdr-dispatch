@@ -35,12 +35,30 @@ degrades — it never installs, authenticates, or creates a missing branch on yo
 
 ## Installation
 
+As a plugin — the recommended path in Claude Code:
+
 ```
 /plugin marketplace add bestony/herdr-dispatch
 /plugin install herdr-dispatch@herdr-dispatch
 ```
 
 If the install summary says `Run /reload-plugins to activate.`, run that.
+
+### Via skills.sh
+
+The same three skills are also published to the [skills.sh](https://skills.sh) registry, for installs
+that are not plugin-managed — or for handing them to another agent that reads `SKILL.md`:
+
+```bash
+npx skills add bestony/herdr-dispatch --list          # what is in the repo
+npx skills add bestony/herdr-dispatch                 # install into ./.claude/skills/
+npx skills add bestony/herdr-dispatch -g              # install into ~/.claude/skills/
+npx skills add bestony/herdr-dispatch -s dispatch-codex -a claude-code -y
+```
+
+Each installed skill directory is self-contained, so `/dispatch-<agent>` works from `.claude/skills/`
+with no plugin installed. Prefer the plugin when you are on Claude Code: `npx skills update` replaces
+the skill directories wholesale, and only the plugin carries a version and the marketplace entry.
 
 <details>
 <summary>Local development install</summary>
@@ -213,14 +231,24 @@ skills/
 │   └── supervise.md          # §6b, §6e–§6f, §6i, §7, §8 — poll, verify, publish, loop, report
 ├── dispatch-codex/
 │   ├── SKILL.md              # §0 invariants, §1 gate and parse
-│   └── references/driver.md  # §5a, §5c, §6a, §6c, §6d, §6g, §6h — everything codex-specific
+│   └── references/
+│       ├── driver.md         # §5a, §5c, §6a, §6c, §6d, §6g, §6h — everything codex-specific
+│       ├── plan.md           # symlink → ../../_shared/plan.md
+│       └── supervise.md      # symlink → ../../_shared/supervise.md
 ├── dispatch-grok/            # same shape
 └── dispatch-opencode/        # same shape
 ```
 
 Each dispatcher is four files with **continuous section numbers §0–§8**, so a cross-reference means
 the same thing wherever you are. Adding a fourth agent means writing one `SKILL.md` and one
-`driver.md`; `_shared/` is reused untouched.
+`driver.md`, plus the two `references/` symlinks; `_shared/` itself is reused untouched.
+
+The symlinks exist because the skills.sh installer copies a skill directory **on its own** — its
+`--copy` mode and its canonical staging both dereference symlinks, so `../_shared/` would otherwise
+arrive as a dangling path and every §2–§4 and §6b–§8 reference in the installed skill would point at
+nothing. They keep the shared halves single-sourced in the repo while resolving after install.
+`ponytail:` this depends on the installer dereferencing symlinks rather than preserving them; if a
+future CLI version changes that, the fix is to copy the two files into each `references/`.
 
 ## License
 

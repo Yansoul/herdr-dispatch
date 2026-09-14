@@ -1,7 +1,7 @@
 # Codex driver — §5a, §5c, §6a, §6c, §6d, §6g, §6h
 
 Everything in `dispatch-codex` that depends on codex itself. The agent-independent halves are
-`../../_shared/plan.md` (§2–§4, §5b) and `../../_shared/supervise.md` (§6b, §6e, §6f, §6i, §7, §8);
+`references/plan.md` (§2–§4, §5b) and `references/supervise.md` (§6b, §6e, §6f, §6i, §7, §8);
 §0 and §1 are in `../SKILL.md`.
 
 Claims marked **(verified)** were checked against codex **0.151.0** on this machine. §2 records the
@@ -34,7 +34,7 @@ matches output arriving *after* the call, so it times out on a command that alre
   starting the agent; `agent start` needs a pane at an idle interactive prompt.
 - `.env` or other secrets missing → **ask the user** whether to symlink them. Never copy secrets.
 
-Then write the brief (§5b in `../../_shared/plan.md`) before launching.
+Then write the brief (§5b in `references/plan.md`) before launching.
 
 ---
 
@@ -111,7 +111,7 @@ What a goal buys over a plain prompt, and what it changes for supervision:
 - The objective is **thread-scoped and persistent**: codex auto-continues toward it across turns
   instead of stopping to wait for input, so an unfinished lane picks *itself* up — nudge prompts are
   a repair path (§6c `idle_incomplete`), not the engine. This is the **autonomous** regime
-  `../../_shared/supervise.md` §7 refers to.
+  `references/supervise.md` §7 refers to.
 - Goal state is machine-readable. It lives in `~/.codex/goals_1.sqlite`, keyed by the session
   uuid, with status `active` / `paused` / `blocked` / `usage_limited` / `budget_limited` /
   `complete` — §6a queries it every sweep. Trap (verified): `~/.codex/sqlite/goals_1.sqlite` also

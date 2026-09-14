@@ -1,7 +1,7 @@
 # Opencode driver — §5a, §5c, §6a, §6c, §6d, §6g, §6h
 
 Everything in `dispatch-opencode` that depends on opencode itself. The agent-independent halves are
-`../../_shared/plan.md` (§2–§4, §5b) and `../../_shared/supervise.md` (§6b, §6e, §6f, §6i, §7, §8);
+`references/plan.md` (§2–§4, §5b) and `references/supervise.md` (§6b, §6e, §6f, §6i, §7, §8);
 §0 and §1 are in `../SKILL.md`.
 
 Sources for the claims below: `opencode --help` and its subcommand help, and the schema and contents
@@ -44,7 +44,7 @@ brief. If `opencode debug paths` does not name a database, §6a has no probe: re
 `probe: unavailable` for the whole run up front and tell the user in §3 that supervision will run on
 pane reads and git state alone, which is materially weaker.
 
-Then write the brief (§5b in `../../_shared/plan.md`) before launching.
+Then write the brief (§5b in `references/plan.md`) before launching.
 
 ---
 
@@ -96,7 +96,7 @@ On `agent_not_ready` the name still resolves — read, resolve, continue.
     herdr agent prompt <lane> "Read .dispatch/TASK.md in this directory and work through its checklist in order. Keep .dispatch/progress.md updated after every item — assume your context may be compacted at any time and that file is all you keep. Write .dispatch/DONE only when every checklist item is done, every acceptance criterion in TASK.md verifiably holds and git status is clean, then run the notify-back command TASK.md gives you."
 
 Record the lane as phase `implementing`. This is the **nudge-driven** regime that
-`../../_shared/supervise.md` §7 refers to: the lane will stop at the end of this turn, and every
+`references/supervise.md` §7 refers to: the lane will stop at the end of this turn, and every
 subsequent step comes from §6d's continuation prompts. Start every lane before supervising any of
 them.
 

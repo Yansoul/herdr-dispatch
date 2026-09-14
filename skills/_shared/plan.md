@@ -6,7 +6,7 @@ workspaces (§4), and the brief written into each lane's checkout (§5b).
 
 What *is* agent-specific — pre-flighting the pane (§5a) and launching/priming the agent (§5c) —
 lives in the calling skill's `references/driver.md`. §0 (invariants) and §1 (gate and parse) live in
-its `SKILL.md`; §6–§8 live in `../_shared/supervise.md`. Section numbers are continuous across all
+its `SKILL.md`; §6–§8 live in `references/supervise.md`. Section numbers are continuous across all
 four files, so a cross-reference means the same thing wherever you are.
 
 Throughout, **the agent** means whichever CLI this skill dispatches (codex, grok, opencode…),
@@ -258,4 +258,4 @@ until the next §7 tick. Write it into the brief with `<orch-pane>` (the §2 `or
 ---
 
 Now launch the lanes: the driver's §5c. Start every lane before supervising any of them, then read
-`../_shared/supervise.md` and continue at §6.
+`references/supervise.md` and continue at §6.
