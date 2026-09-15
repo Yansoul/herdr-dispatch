@@ -1,7 +1,7 @@
 {
   "name": "herdr-dispatch",
-  "description": "A simple plugin for dispatch task in Claude Code",
   "version": "0.1.0",
+  "description": "Dispatch tasks to codex / grok / opencode / cursor agents running in isolated herdr worktrees, supervise them to completion, then push each lane and open its pull request",
   "author": {
     "name": "Bestony",
     "email": "bestony@linux.com",
@@ -10,5 +10,6 @@
   "homepage": "https://github.com/bestony/herdr-dispatch",
   "repository": "https://github.com/bestony/herdr-dispatch",
   "license": "MIT",
-  "keywords": ["herdr", "worker","orchestrator"]
+  "keywords": ["herdr", "worker", "orchestrator"],
+  "skills": "./skills/"
 }

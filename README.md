@@ -4,7 +4,7 @@ A Claude Code plugin that turns one Claude session into an **orchestrator** for 
 agents.
 
 You describe the work. Claude splits it into *lanes*, gives each lane its own git worktree and its
-own agent — **codex**, **grok** or **opencode** — running inside a [herdr](https://herdr.dev)
+own agent — **codex**, **grok**, **opencode** or **cursor** — running inside a [herdr](https://herdr.dev)
 workspace, then supervises every lane on a timer until its work is verified, its branch is pushed
 and its pull request is open.
 
@@ -25,7 +25,7 @@ The division of labour is deliberate:
 | [**herdr**](https://herdr.dev) | Creates the worktrees, workspaces and panes each lane lives in. `brew install herdr` — developed against 0.9.0 |
 | **A herdr pane** | The skills refuse to run outside one — there would be nothing to dispatch into |
 | **A git repository** | Every lane is a linked worktree branched off a base ref. Run from the main checkout, not a linked worktree |
-| **At least one agent CLI** | `codex`, `grok`, or `opencode` — whichever dispatcher you invoke, resolvable from the pane's own login shell |
+| **At least one agent CLI** | `codex`, `grok`, `opencode`, or `cursor` — whichever dispatcher you invoke, resolvable from the pane's own login shell |
 | **`python3`, `jq`** | Used to probe each lane's on-disk state |
 | **`gh`, authenticated** | Optional. Without it lanes are pushed but the `gh pr create` command is printed for you to run |
 | **`origin` remote** | Optional. Without it lanes stay local and are reported as such |
@@ -46,7 +46,7 @@ If the install summary says `Run /reload-plugins to activate.`, run that.
 
 ### Via skills.sh
 
-The same three skills are also published to the [skills.sh](https://skills.sh) registry, for installs
+The same four skills are also published to the [skills.sh](https://skills.sh) registry, for installs
 that are not plugin-managed — or for handing them to another agent that reads `SKILL.md`:
 
 ```bash
@@ -98,7 +98,7 @@ What happens next:
 The plan, the questions and the final report are in Chinese; the briefs, commits and PR bodies are
 in English.
 
-## The three dispatchers
+## The four dispatchers
 
 Same procedure, same flags, different agent underneath. Pick by which CLI you have and how
 autonomous you want the lanes to be.
@@ -108,6 +108,7 @@ autonomous you want the lanes to be.
 | `/dispatch-codex` | codex | **Goal mode** (`/goal`). Codex auto-continues toward the objective across turns; the supervision loop is a repair path |
 | `/dispatch-grok` | grok (Grok Build) | **Goal mode** when `[goal] enabled = true` in `~/.grok/config.toml`, otherwise one-shot + nudges. The dispatcher reads your config and tells you which regime is in force |
 | `/dispatch-opencode` | opencode | **Nudge-driven.** Opencode has no goal mode — it stops after every turn, so the loop's continuation prompt *is* the engine. Expect roughly one turn per sweep interval |
+| `/dispatch-cursor` | cursor (`cursor-agent`) | **Goal mode** (`/goal`). Cursor pursues a durable goal across turns and audits the evidence before marking it complete; the supervision loop is a repair path. There is no `--compact-at` — cursor publishes no context numbers on disk, so `/summarize` runs only as a repair step |
 
 Plugin-qualified forms work too: `/herdr-dispatch:dispatch-codex`.
 
@@ -133,7 +134,9 @@ Everything that is not a flag is task text. Tasks split on numbered items, newli
 
 `--compact-at` takes absolute tokens rather than a percentage because opencode publishes no context
 window on disk, and the dispatcher refuses to invent a denominator. The codex and grok dispatchers
-compact on a percentage they can actually read.
+compact on a percentage they can actually read. The cursor dispatcher does not offer `--compact-at`
+at all: cursor publishes neither a context window nor per-turn token counts on disk, so
+`/summarize` runs only as a repair step there.
 
 ### Two things that are not flags
 
@@ -149,6 +152,7 @@ the next sweep notices it, so lanes launch with approvals bypassed:
 | codex | `--dangerously-bypass-approvals-and-sandbox` | Approvals **and** the sandbox |
 | grok | `--permission-mode bypassPermissions` | Approvals only — your `--sandbox` profile is left untouched, so if you have it set to `off`, the worktree is the only boundary |
 | opencode | `--auto` | Approvals only, and opencode's own help calls it dangerous. There is no sandbox either way |
+| cursor | `--force` (plus `--trust` for the workspace-trust dialog) | Approvals only — your `--sandbox` setting is left untouched, so if it is off, the worktree is the only boundary |
 
 Pass `--no-yolo` to keep prompting; the loop then resolves each overlay itself, at the cost of a lane
 pausing between sweeps. Under `--no-yolo` the flag is passed through *explicitly* rather than merely
@@ -236,11 +240,12 @@ skills/
 │       ├── plan.md           # symlink → ../../_shared/plan.md
 │       └── supervise.md      # symlink → ../../_shared/supervise.md
 ├── dispatch-grok/            # same shape
-└── dispatch-opencode/        # same shape
+├── dispatch-opencode/        # same shape
+└── dispatch-cursor/          # same shape
 ```
 
 Each dispatcher is four files with **continuous section numbers §0–§8**, so a cross-reference means
-the same thing wherever you are. Adding a fourth agent means writing one `SKILL.md` and one
+the same thing wherever you are. Adding another agent means writing one `SKILL.md` and one
 `driver.md`, plus the two `references/` symlinks; `_shared/` itself is reused untouched.
 
 The symlinks exist because the skills.sh installer copies a skill directory **on its own** — its
