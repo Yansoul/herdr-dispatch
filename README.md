@@ -112,6 +112,14 @@ autonomous you want the lanes to be.
 
 Plugin-qualified forms work too: `/herdr-dispatch:dispatch-codex`.
 
+## Other orchestrators
+
+The skills are a Claude Code plugin, but the orchestration procedure is portable — Kimi Code CLI runs
+it with zero changes, and codex runs it with a packaging caveat and an external timer.
+**[docs/orchestrators.md](docs/orchestrators.md)** records what is verified and the three
+Claude-isms to substitute (the §7 timer, the §3 confirmation widget, and the `allowed-tools`
+frontmatter).
+
 ## Flags
 
 ```
