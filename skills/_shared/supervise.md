@@ -248,3 +248,32 @@ worktree, and the merge command will report a partial success. Warn that `worktr
 uncommitted work in that checkout, and remember each lane may have **two** workspace ids to clean up
 (§4). Only when the run used `--draft`, print `gh pr ready <pr-number>` ahead of the merge command:
 GitHub refuses to merge a draft outright (`Pull request is not mergeable: it is in draft state`).
+
+## §8.1 Post-merge cleanup — offer it, don't leave it to memory
+
+The §0.7 ban on `worktree remove` protects lanes **while the run is live**. Once every PR of the run
+is merged (or the run is closed for good), that rationale is gone and the residue becomes pure cost:
+each lane's worktree holds a full checkout plus whatever its dependency installs and builds produced
+(routinely 1–2 GB per lane), and the branch refs linger after GitHub deletes the remote side. So when
+you learn the run's PRs have merged — whether you merged them on the user's instruction or the user
+says so — **offer cleanup once, unprompted by anything but the merge**, and on approval run it
+yourself rather than printing commands again:
+
+1. `herdr worktree remove --workspace <ws>` per lane workspace recorded in the state file (both ids
+   when §4 created two) — this also removes the lane's installed dependencies and in-checkout build
+   artifacts.
+2. `git -C <repo> branch -d <branch>` per lane branch. `-d` refuses an unmerged branch — that refusal
+   is the safety check, so never escalate to `-D`.
+3. Verify with `git -C <repo> worktree list` that only worktrees belonging to other runs remain, and
+   report the disk freed (`du -sh` before/after is one line each).
+
+Keep, never delete: the run's state directory (`~/.claude/<skill-name>/<run-id>/` — the audit trail
+of what was verified and pushed, and tiny) and any shared caches (Xcode DerivedData, pnpm store) that
+predate the run. The agent's on-disk chat transcripts (e.g. `~/.cursor/chats/<hash>/<uuid>` for
+cursor, the driver says where its agent writes) are the one judgement call: they are the only full
+record of *why* a lane decided what it did, so default to a grace period — offer to delete them a few
+days after merge if no regression has surfaced, not immediately. If the user wants them gone now, they
+go now.
+
+Cleanup order still matters: worktrees first, branches second, for the same reason as the block
+above.
