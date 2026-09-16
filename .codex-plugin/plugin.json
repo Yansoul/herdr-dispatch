@@ -11,5 +11,21 @@
   "repository": "https://github.com/bestony/herdr-dispatch",
   "license": "MIT",
   "keywords": ["herdr", "worker", "orchestrator"],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "hooks": {
+    "hooks": {
+      "SessionStart": [
+        {
+          "matcher": "startup|resume|clear",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "for v in \"$HOME\"/.codex/plugins/cache/herdr-dispatch/herdr-dispatch/*/skills; do [ -d \"$v/_shared\" ] || continue; for r in \"$v\"/dispatch-*/references; do cp \"$v/_shared/plan.md\" \"$v/_shared/supervise.md\" \"$r/\" 2>/dev/null; done; done; exit 0",
+              "timeout": 10
+            }
+          ]
+        }
+      ]
+    }
+  }
 }

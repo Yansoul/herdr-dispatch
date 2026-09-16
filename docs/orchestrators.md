@@ -59,16 +59,16 @@ Claims below were verified on 2026-09-15 against herdr 0.9.0, codex-cli 0.154.0 
   herdr-dispatch:dispatch-cursor 技能派发：…". The skill body then loads normally.
 - **Symlink caveat (verified).** codex's *plugin install cache* (`~/.codex/plugins/cache/…`) copies
   the tree and **drops symlinks** — each skill's `references/plan.md` and `references/supervise.md`
-  go missing, and every §2–§4 / §6b–§8 cross-reference dangles. The *marketplace clone*
-  (`~/.codex/.tmp/marketplaces/herdr-dispatch/`) preserves working symlinks. If your codex build
-  resolves skills against the cache, materialize the links there after install:
+  go missing, and every §2–§4 / §6b–§8 cross-reference dangles. The plugin ships a `SessionStart`
+  command hook (declared in `.codex-plugin/plugin.json`) that re-materializes both files into every
+  `dispatch-*/references/` under the cache at each session start, so installs and upgrades
+  self-heal — trust the hook once when codex flags it for review. If your codex build does not run
+  plugin hooks, materialize the links by hand:
 
   ```bash
   cd ~/.codex/plugins/cache/herdr-dispatch/herdr-dispatch/*/skills
   for d in dispatch-*/references; do cp _shared/plan.md _shared/supervise.md "$d/"; done
   ```
-
-  (Re-run after every plugin upgrade; upgrades replace the cache directory.)
 - **Timer (§7):** codex has **no in-session scheduler** (verified: `in_app_local_automation` is the
   desktop app's Scheduled surface; the CLI exposes no recurring-prompt mechanism). Use an external
   scheduler poking the pane — both injection channels are verified to be obeyed by a live codex
