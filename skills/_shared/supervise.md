@@ -14,6 +14,7 @@ calling skill's `references/driver.md`:
 | §6g | driver | handle a `blocked` lane / approval overlay |
 | §6h | driver | compact or restart a lane |
 | §6i | here | close the sweep |
+| §6j | here | review, fix, and merge a published lane |
 | §7, §8 | here | arm the loop, report |
 
 Reread §0 (in `SKILL.md`) before every sweep.
@@ -176,6 +177,50 @@ retries forever is worse than one that hands the command back.
 
 ---
 
+## §6j Review and merge a published lane
+
+`published` ends a lane only when the run opted out — `--no-automerge`, `--draft`, or `--no-pr`.
+Otherwise the contract carries the PR across the line itself: an independent review, fixes for what
+it finds, and the merge. It runs per lane, only ever on PRs this run opened, and it is idempotent
+like §6f — record `review_rounds`, findings, and `merge_sha` in the state file and skip whatever a
+prior sweep already did.
+
+**1. Review with eyes that did not write the code.** Spawn a subagent — a fresh, independent agent
+with no share in this run's authorship — pointed at `gh pr diff <pr>`, the lane's §3-confirmed
+acceptance criteria, and TASK.md / `.dispatch/progress.md` in the checkout. Its brief: find
+correctness bugs, security issues, uncovered acceptance criteria and convention breaks; report each
+finding with file, line and severity; answer "no findings" explicitly when there are none. Your own
+read of the diff is corroboration, never the review — you already verified this work for §6f, and
+the same eyes miss the same things twice.
+
+**2. Fix what it finds, on the lane's own branch.** Prefer the lane's agent when it is still alive —
+§6d steering applies, and it holds the context that wrote the code. When the agent has exited or the
+finding is a small mechanical fix, apply it yourself in the lane's worktree, commit with an ordinary
+conventional message, and push the same explicit refspec §6f used — fixes are part of publishing, so
+they ride the same branch, never a second one. Re-run the §6e checks that the fix touches. A lane
+still drawing findings after **3 review rounds** stops: record `escalated` with the outstanding
+findings, leave the PR open, and surface it — unbounded self-repair is how a lane burns the night on
+a disagreement.
+
+**3. Merge only a green, mergeable PR.**
+
+    gh pr checks <pr> --repo <owner/repo>        # all success/skipped; pending → next sweep
+    gh pr view <pr> --json state,mergeable       # OPEN and MERGEABLE, or nothing happens
+
+Merge with the repo's own recipe — the §8 block's `gh pr merge <pr> --squash --delete-branch` unless
+the repo plainly uses another — then record `merge_sha` and set phase `merged`. A failing check is
+never something to force past: red means surface it, and a conflicted PR means rebase the lane
+branch onto the fresh base, re-verify §6e, push again, and let the reviewer see the new diff once
+more. `--draft` PRs are never auto-merged — they were opened to land quietly, so `gh pr ready` is
+the user's call, not yours.
+
+**4. A merged lane's residue is pure cost — clean it on the spot.** The §8.1 offer exists for PRs
+the *user* merged; when the run merged the PR itself, that question is already answered. Run §8.1
+steps 1–3 for the lane right away — worktree, dead workspaces, `-D` on the squash-merged branch,
+empty parent dir — and report the freed disk in §8.
+
+---
+
 ## §6i Close the sweep
 
 Rewrite the state file atomically (write `.tmp`, then `mv`). Emit **one line per lane** — lane,
@@ -216,10 +261,12 @@ prompt) is rejected as `agent_blocked` and never retried (§5b) — so when the 
 `--resume` by hand, and that a lane which stops mid-work stays stopped until such a sweep nudges it.
 
 Stop the loop once every lane is terminal or awaiting-user, and say which lanes wait on what.
-Terminal means `published`, `failed`, user-paused, or `verified` with a recorded reason why §6f
-could not publish it; awaiting-user means a recorded `escalated` the user has not yet answered — a
-lane whose work is done but whose branch is still unpushed is **not** terminal, and the loop is what
-eventually gets it out.
+Terminal means `merged`, `failed`, user-paused, `verified` with a recorded reason why §6f could not
+publish it, or `published` when §6j is off the table — `--no-automerge`, `--draft`, `--no-pr`, or a
+recorded merge-blocked reason. A `published` lane under the default contract is **not** terminal: it
+is mid-§6j, and the loop is what carries it through review to merge. Awaiting-user means a recorded
+`escalated` the user has not yet answered — a lane whose work is done but whose branch is still
+unpushed is **not** terminal either, and the loop is what eventually gets it out.
 
 Do not busy-wait inside one turn instead: a sweep is cheap, but a blocking sleep loop burns the Bash
 tool's ceiling and holds the session hostage.
@@ -232,11 +279,13 @@ Per lane: 分支, checkout 路径, 状态, 已完成/剩余清单项, commit 数
 **验收标准逐条结果**（每条：通过/未通过/无法机械验证时给依据）, 该 agent 的运行情况（driver 的 §6a
 报的状态字段、token/用量、有无暂停 / 限流 / 阻塞经历；驱动方式降级过的写明原因）,
 是否偏离已确认的实施计划（有则一句话说明偏在哪、为什么）, compaction 次数,
-**PR 链接**（未开成的写明原因，别留空）.
+**PR 链接**（未开成的写明原因，别留空）, **review 与 merge 结果**（merged 的给 merge sha、review
+轮数和 §8.1 清掉了什么；没合的写明卡在 §6j 哪一步）.
 
 Name the agent and version once at the top, and say plainly which side of the line each thing is on:
-you **did** push the verified branches and open their PRs (§6f); you did **not** merge anything and
-did not remove any workspace. Then print — do not run — the follow-up commands:
+which PRs the run reviewed, fixed and merged itself (§6j), and which it deliberately left open —
+`--no-automerge`, `--draft`, escalated after 3 review rounds, or blocked on red checks — with the
+reason for each. For every lane left unmerged, print — do not run — the follow-up commands:
 
     herdr worktree remove --workspace <ws>             # destroys the checkout AND kills its agent process
     gh pr merge <pr-number> --squash --delete-branch   # per lane, after you have reviewed it
@@ -251,6 +300,10 @@ uncommitted work in that checkout, and remember each lane may have **two** works
 GitHub refuses to merge a draft outright (`Pull request is not mergeable: it is in draft state`).
 
 ## §8.1 Post-merge cleanup — offer it, don't leave it to memory
+
+(Lanes §6j merged are already clean — it ran this on the spot. This section covers PRs the user
+merged by hand, lanes left open by `--no-automerge`/`--draft`/escalation, and runs that predate
+§6j.)
 
 The §0 ban on `worktree remove` protects lanes **while the run is live**. Once every PR of the run
 is merged (or the run is closed for good), that rationale is gone and the residue becomes pure cost:

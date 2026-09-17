@@ -1,7 +1,7 @@
 ---
 name: dispatch-cursor
-description: Dispatch one or more tasks to cursor agents in herdr workspaces — the orchestrator designs each lane's plan and acceptance criteria, cursor pursues them in goal mode — supervise them to completion, then push each lane and open its pull request. Use when the user asks to dispatch/fan out/派发 tasks to cursor agents or herdr lanes, to run several cursor tasks in parallel worktrees, or to resume supervision of an existing dispatch-cursor run (`--resume`).
-argument-hint: '<task-1>; <task-2>; … [--lanes N] [--base <ref>] [--no-yolo] [--yolo] [--draft] [--no-pr] [--resume] [--no-loop]'
+description: Dispatch one or more tasks to cursor agents in herdr workspaces — the orchestrator designs each lane's plan and acceptance criteria, cursor pursues them in goal mode — supervise them to completion, then push, independently review, and merge each lane's pull request. Use when the user asks to dispatch/fan out/派发 tasks to cursor agents or herdr lanes, to run several cursor tasks in parallel worktrees, or to resume supervision of an existing dispatch-cursor run (`--resume`).
+argument-hint: '<task-1>; <task-2>; … [--lanes N] [--base <ref>] [--no-yolo] [--yolo] [--draft] [--no-pr] [--no-automerge] [--resume] [--no-loop]'
 allowed-tools: Read, Write, Edit, Glob, Grep, TodoWrite, AskUserQuestion, Skill, Bash(herdr:*), Bash(git:*), Bash(gh:*), Bash(jq:*), Bash(python3:*), Bash(mkdir:*), Bash(ls:*), Bash(test:*), Bash(date:*), Bash(mv:*), Bash(cat:*), Bash(printf:*)
 ---
 
@@ -17,7 +17,7 @@ pursuing**: each lane gets a plan and acceptance criteria you author and the use
 and runs as a cursor **goal** (`/goal`, §5c) — a durable objective cursor auto-continues toward
 across turns until it is met, auditing the evidence itself before it calls the goal complete. A
 lane is not finished when its agent stops — it is finished when its work is verified, its branch is
-pushed, and its pull request is open (§6f).
+pushed, and its pull request is open, independently reviewed, and merged (§6f, §6j).
 
 ## How to read this skill
 
@@ -29,7 +29,7 @@ of them, so a cross-reference means the same thing wherever you are:
 | §0 invariants, §1 gate and parse | this file | always, and §0 again at the start of every sweep |
 | §2–§4, §5b | `references/plan.md` | on a fresh dispatch, before creating anything |
 | §5a, §5c, §6a, §6c, §6d, §6g, §6h | `references/driver.md` | everything cursor-specific: launch, probe, classify, steer |
-| §6b, §6e, §6f, §6i, §7, §8 | `references/supervise.md` | before the first supervision sweep |
+| §6b, §6e, §6f, §6i, §6j, §7, §8 | `references/supervise.md` | before the first supervision sweep |
 
 `references/plan.md` and `references/supervise.md` are symlinks into the plugin's `skills/_shared/`:
 the shared halves stay single-sourced while still resolving when this skill's directory is copied on
@@ -66,8 +66,8 @@ not invoked.
 7. **Never destroy work; publish only what you verified.** Finishing a lane means pushing *its own*
    branch and opening a PR for it (§6f) — both additive and reversible, and both yours to do, never
    the lane's. Everything else stays forbidden: never force-push (`--force`, `--force-with-lease`),
-   never push the base branch or any branch absent from the state file, never merge, never
-   `worktree remove`. Print those commands and let the user run them: `worktree remove` kills the
+   never push the base branch or any branch absent from the state file, never merge outside the
+   §6j gate, never `worktree remove`. Print those commands and let the user run them: `worktree remove` kills the
    running cursor process and deletes uncommitted changes even without `--force`.
 
 ---
@@ -91,6 +91,7 @@ Parse flags from the raw request; everything else is task text.
 | `--yolo` | accepted and explicit, but redundant: this is already the default | on |
 | `--draft` | open pull requests as drafts instead of ready for review | off — **ready for review is the default** |
 | `--no-pr` | push each verified lane but stop there; print the `gh pr create` command instead | off |
+| `--no-automerge` | stop at open PRs — no independent review, no merge; the human merges | off — **review-and-merge is the default** |
 | `--resume` | skip §2–§5 (this gate and parse still run); run ONE supervision sweep over the existing state file | off |
 | `--no-loop` | do not arm the recurring supervision loop after dispatch | off |
 
