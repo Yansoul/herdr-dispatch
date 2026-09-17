@@ -240,7 +240,8 @@ did not remove any workspace. Then print — do not run — the follow-up comman
 
     herdr worktree remove --workspace <ws>             # destroys the checkout AND kills its agent process
     gh pr merge <pr-number> --squash --delete-branch   # per lane, after you have reviewed it
-    git -C <repo> branch -d <branch>                   # only if the branch outlived the PR merge
+    git -C <repo> branch -d <branch>                   # only if the branch outlived the PR merge;
+                                                     # a squash-merged branch needs -D — see §8.1
 
 The block is in that order on purpose: `worktree remove` runs **before** `gh pr merge
 --delete-branch`, because git refuses to delete a local branch that is still checked out in a
@@ -251,20 +252,41 @@ GitHub refuses to merge a draft outright (`Pull request is not mergeable: it is 
 
 ## §8.1 Post-merge cleanup — offer it, don't leave it to memory
 
-The §0.7 ban on `worktree remove` protects lanes **while the run is live**. Once every PR of the run
+The §0 ban on `worktree remove` protects lanes **while the run is live**. Once every PR of the run
 is merged (or the run is closed for good), that rationale is gone and the residue becomes pure cost:
 each lane's worktree holds a full checkout plus whatever its dependency installs and builds produced
 (routinely 1–2 GB per lane), and the branch refs linger after GitHub deletes the remote side. So when
 you learn the run's PRs have merged — whether you merged them on the user's instruction or the user
 says so — **offer cleanup once, unprompted by anything but the merge**, and on approval run it
-yourself rather than printing commands again:
+yourself rather than printing commands again. The signal can arrive after the loop has stopped: a
+`--resume` sweep, or any later session the user tells "those PRs merged", still owes this offer.
+Check `gh pr view <pr> --json state` for the live merge state — never trust a state file that last
+saw the lane as `published`.
 
 1. `herdr worktree remove --workspace <ws>` per lane workspace recorded in the state file (both ids
-   when §4 created two) — this also removes the lane's installed dependencies and in-checkout build
-   artifacts.
-2. `git -C <repo> branch -d <branch>` per lane branch. `-d` refuses an unmerged branch — that refusal
-   is the safety check, so never escalate to `-D`.
-3. Verify with `git -C <repo> worktree list` that only worktrees belonging to other runs remain, and
+   when §4 created two) — this also closes the workspace and deletes the lane's installed
+   dependencies and in-checkout build artifacts. If a recorded workspace id no longer resolves, the
+   workspace was closed out-of-band; finish the job by path instead:
+   `git -C <repo> worktree remove <checkout_path>` when the directory still exists, then
+   `git -C <repo> worktree prune` to drop the stale registration when it does not.
+2. Branch deletion needs a merge check, not ancestry. §8 merges with `--squash`, and a squash-merged
+   branch tip is never an ancestor of the base — `git branch -d` refuses it forever, so "never -D"
+   would strand every branch this run published. Per lane branch:
+
+       gh pr list --repo <owner/repo> --head <branch> --state merged --json number
+
+   - a merged PR exists → the work is in the base even though ancestry says otherwise →
+     `git -C <repo> branch -D <branch>` is safe.
+   - no merged PR, but `git merge-base --is-ancestor <branch> origin/<base>` → `branch -d`.
+   - neither → the branch still holds work nobody merged: keep it, and say why in the report.
+3. Sweep the residue the state file cannot see. A workspace outlives its checkout: when a lane's
+   worktree directory was deleted out-of-band (a manual `rm`, a crashed run, a different session's
+   cleanup), the herdr workspace stays behind pointing at nothing. List workspaces, `test -d` each
+   `checkout_path`, and `herdr workspace close` the ones whose path is gone — a workspace with no
+   checkout can only dead-end, so closing it destroys nothing. Then `rmdir` the lane's empty parent
+   directory under `~/.herdr/worktrees/<repo>/`: it survives every `worktree remove` and collects
+   one stale entry per repo otherwise.
+4. Verify with `git -C <repo> worktree list` that only worktrees belonging to other runs remain, and
    report the disk freed (`du -sh` before/after is one line each).
 
 Keep, never delete: the run's state directory (`~/.claude/<skill-name>/<run-id>/` — the audit trail
