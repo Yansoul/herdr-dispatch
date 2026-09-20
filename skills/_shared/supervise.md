@@ -14,6 +14,7 @@ calling skill's `references/driver.md`:
 | §6g | driver | handle a `blocked` lane / approval overlay |
 | §6h | driver | compact or restart a lane |
 | §6i | here | close the sweep |
+| §6j | here | review, fix, and merge a published lane |
 | §7, §8 | here | arm the loop, report |
 
 Reread §0 (in `SKILL.md`) before every sweep.
@@ -176,6 +177,50 @@ retries forever is worse than one that hands the command back.
 
 ---
 
+## §6j Review and merge a published lane
+
+`published` ends a lane only when the run opted out — `--no-automerge`, `--draft`, or `--no-pr`.
+Otherwise the contract carries the PR across the line itself: an independent review, fixes for what
+it finds, and the merge. It runs per lane, only ever on PRs this run opened, and it is idempotent
+like §6f — record `review_rounds`, findings, and `merge_sha` in the state file and skip whatever a
+prior sweep already did.
+
+**1. Review with eyes that did not write the code.** Spawn a subagent — a fresh, independent agent
+with no share in this run's authorship — pointed at `gh pr diff <pr>`, the lane's §3-confirmed
+acceptance criteria, and TASK.md / `.dispatch/progress.md` in the checkout. Its brief: find
+correctness bugs, security issues, uncovered acceptance criteria and convention breaks; report each
+finding with file, line and severity; answer "no findings" explicitly when there are none. Your own
+read of the diff is corroboration, never the review — you already verified this work for §6f, and
+the same eyes miss the same things twice.
+
+**2. Fix what it finds, on the lane's own branch.** Prefer the lane's agent when it is still alive —
+§6d steering applies, and it holds the context that wrote the code. When the agent has exited or the
+finding is a small mechanical fix, apply it yourself in the lane's worktree, commit with an ordinary
+conventional message, and push the same explicit refspec §6f used — fixes are part of publishing, so
+they ride the same branch, never a second one. Re-run the §6e checks that the fix touches. A lane
+still drawing findings after **3 review rounds** stops: record `escalated` with the outstanding
+findings, leave the PR open, and surface it — unbounded self-repair is how a lane burns the night on
+a disagreement.
+
+**3. Merge only a green, mergeable PR.**
+
+    gh pr checks <pr> --repo <owner/repo>        # all success/skipped; pending → next sweep
+    gh pr view <pr> --json state,mergeable       # OPEN and MERGEABLE, or nothing happens
+
+Merge with the repo's own recipe — the §8 block's `gh pr merge <pr> --squash --delete-branch` unless
+the repo plainly uses another — then record `merge_sha` and set phase `merged`. A failing check is
+never something to force past: red means surface it, and a conflicted PR means rebase the lane
+branch onto the fresh base, re-verify §6e, push again, and let the reviewer see the new diff once
+more. `--draft` PRs are never auto-merged — they were opened to land quietly, so `gh pr ready` is
+the user's call, not yours.
+
+**4. A merged lane's residue is pure cost — clean it on the spot.** The §8.1 offer exists for PRs
+the *user* merged; when the run merged the PR itself, that question is already answered. Run §8.1
+steps 1–3 for the lane right away — worktree, dead workspaces, `-D` on the squash-merged branch,
+empty parent dir — and report the freed disk in §8.
+
+---
+
 ## §6i Close the sweep
 
 Rewrite the state file atomically (write `.tmp`, then `mv`). Emit **one line per lane** — lane,
@@ -216,10 +261,12 @@ prompt) is rejected as `agent_blocked` and never retried (§5b) — so when the 
 `--resume` by hand, and that a lane which stops mid-work stays stopped until such a sweep nudges it.
 
 Stop the loop once every lane is terminal or awaiting-user, and say which lanes wait on what.
-Terminal means `published`, `failed`, user-paused, or `verified` with a recorded reason why §6f
-could not publish it; awaiting-user means a recorded `escalated` the user has not yet answered — a
-lane whose work is done but whose branch is still unpushed is **not** terminal, and the loop is what
-eventually gets it out.
+Terminal means `merged`, `failed`, user-paused, `verified` with a recorded reason why §6f could not
+publish it, or `published` when §6j is off the table — `--no-automerge`, `--draft`, `--no-pr`, or a
+recorded merge-blocked reason. A `published` lane under the default contract is **not** terminal: it
+is mid-§6j, and the loop is what carries it through review to merge. Awaiting-user means a recorded
+`escalated` the user has not yet answered — a lane whose work is done but whose branch is still
+unpushed is **not** terminal either, and the loop is what eventually gets it out.
 
 Do not busy-wait inside one turn instead: a sweep is cheap, but a blocking sleep loop burns the Bash
 tool's ceiling and holds the session hostage.
@@ -232,15 +279,18 @@ Per lane: 分支, checkout 路径, 状态, 已完成/剩余清单项, commit 数
 **验收标准逐条结果**（每条：通过/未通过/无法机械验证时给依据）, 该 agent 的运行情况（driver 的 §6a
 报的状态字段、token/用量、有无暂停 / 限流 / 阻塞经历；驱动方式降级过的写明原因）,
 是否偏离已确认的实施计划（有则一句话说明偏在哪、为什么）, compaction 次数,
-**PR 链接**（未开成的写明原因，别留空）.
+**PR 链接**（未开成的写明原因，别留空）, **review 与 merge 结果**（merged 的给 merge sha、review
+轮数和 §8.1 清掉了什么；没合的写明卡在 §6j 哪一步）.
 
 Name the agent and version once at the top, and say plainly which side of the line each thing is on:
-you **did** push the verified branches and open their PRs (§6f); you did **not** merge anything and
-did not remove any workspace. Then print — do not run — the follow-up commands:
+which PRs the run reviewed, fixed and merged itself (§6j), and which it deliberately left open —
+`--no-automerge`, `--draft`, escalated after 3 review rounds, or blocked on red checks — with the
+reason for each. For every lane left unmerged, print — do not run — the follow-up commands:
 
     herdr worktree remove --workspace <ws>             # destroys the checkout AND kills its agent process
     gh pr merge <pr-number> --squash --delete-branch   # per lane, after you have reviewed it
-    git -C <repo> branch -d <branch>                   # only if the branch outlived the PR merge
+    git -C <repo> branch -d <branch>                   # only if the branch outlived the PR merge;
+                                                     # a squash-merged branch needs -D — see §8.1
 
 The block is in that order on purpose: `worktree remove` runs **before** `gh pr merge
 --delete-branch`, because git refuses to delete a local branch that is still checked out in a
@@ -248,3 +298,57 @@ worktree, and the merge command will report a partial success. Warn that `worktr
 uncommitted work in that checkout, and remember each lane may have **two** workspace ids to clean up
 (§4). Only when the run used `--draft`, print `gh pr ready <pr-number>` ahead of the merge command:
 GitHub refuses to merge a draft outright (`Pull request is not mergeable: it is in draft state`).
+
+## §8.1 Post-merge cleanup — offer it, don't leave it to memory
+
+(Lanes §6j merged are already clean — it ran this on the spot. This section covers PRs the user
+merged by hand, lanes left open by `--no-automerge`/`--draft`/escalation, and runs that predate
+§6j.)
+
+The §0 ban on `worktree remove` protects lanes **while the run is live**. Once every PR of the run
+is merged (or the run is closed for good), that rationale is gone and the residue becomes pure cost:
+each lane's worktree holds a full checkout plus whatever its dependency installs and builds produced
+(routinely 1–2 GB per lane), and the branch refs linger after GitHub deletes the remote side. So when
+you learn the run's PRs have merged — whether you merged them on the user's instruction or the user
+says so — **offer cleanup once, unprompted by anything but the merge**, and on approval run it
+yourself rather than printing commands again. The signal can arrive after the loop has stopped: a
+`--resume` sweep, or any later session the user tells "those PRs merged", still owes this offer.
+Check `gh pr view <pr> --json state` for the live merge state — never trust a state file that last
+saw the lane as `published`.
+
+1. `herdr worktree remove --workspace <ws>` per lane workspace recorded in the state file (both ids
+   when §4 created two) — this also closes the workspace and deletes the lane's installed
+   dependencies and in-checkout build artifacts. If a recorded workspace id no longer resolves, the
+   workspace was closed out-of-band; finish the job by path instead:
+   `git -C <repo> worktree remove <checkout_path>` when the directory still exists, then
+   `git -C <repo> worktree prune` to drop the stale registration when it does not.
+2. Branch deletion needs a merge check, not ancestry. §8 merges with `--squash`, and a squash-merged
+   branch tip is never an ancestor of the base — `git branch -d` refuses it forever, so "never -D"
+   would strand every branch this run published. Per lane branch:
+
+       gh pr list --repo <owner/repo> --head <branch> --state merged --json number
+
+   - a merged PR exists → the work is in the base even though ancestry says otherwise →
+     `git -C <repo> branch -D <branch>` is safe.
+   - no merged PR, but `git merge-base --is-ancestor <branch> origin/<base>` → `branch -d`.
+   - neither → the branch still holds work nobody merged: keep it, and say why in the report.
+3. Sweep the residue the state file cannot see. A workspace outlives its checkout: when a lane's
+   worktree directory was deleted out-of-band (a manual `rm`, a crashed run, a different session's
+   cleanup), the herdr workspace stays behind pointing at nothing. List workspaces, `test -d` each
+   `checkout_path`, and `herdr workspace close` the ones whose path is gone — a workspace with no
+   checkout can only dead-end, so closing it destroys nothing. Then `rmdir` the lane's empty parent
+   directory under `~/.herdr/worktrees/<repo>/`: it survives every `worktree remove` and collects
+   one stale entry per repo otherwise.
+4. Verify with `git -C <repo> worktree list` that only worktrees belonging to other runs remain, and
+   report the disk freed (`du -sh` before/after is one line each).
+
+Keep, never delete: the run's state directory (`~/.claude/<skill-name>/<run-id>/` — the audit trail
+of what was verified and pushed, and tiny) and any shared caches (Xcode DerivedData, pnpm store) that
+predate the run. The agent's on-disk chat transcripts (e.g. `~/.cursor/chats/<hash>/<uuid>` for
+cursor, the driver says where its agent writes) are the one judgement call: they are the only full
+record of *why* a lane decided what it did, so default to a grace period — offer to delete them a few
+days after merge if no regression has surfaced, not immediately. If the user wants them gone now, they
+go now.
+
+Cleanup order still matters: worktrees first, branches second, for the same reason as the block
+above.

@@ -1,0 +1,31 @@
+{
+  "name": "herdr-dispatch",
+  "version": "0.1.0",
+  "description": "Dispatch tasks to codex / grok / opencode / cursor / devin agents running in isolated herdr worktrees, supervise them to completion, then push each lane and open its pull request",
+  "author": {
+    "name": "Bestony",
+    "email": "bestony@linux.com",
+    "url": "https://github.com/bestony"
+  },
+  "homepage": "https://github.com/bestony/herdr-dispatch",
+  "repository": "https://github.com/bestony/herdr-dispatch",
+  "license": "MIT",
+  "keywords": ["herdr", "worker", "orchestrator"],
+  "skills": "./skills/",
+  "hooks": {
+    "hooks": {
+      "SessionStart": [
+        {
+          "matcher": "startup|resume|clear",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "for v in \"$HOME\"/.codex/plugins/cache/herdr-dispatch/herdr-dispatch/*/skills; do [ -d \"$v/_shared\" ] || continue; for r in \"$v\"/dispatch-*/references; do cp \"$v/_shared/plan.md\" \"$v/_shared/supervise.md\" \"$r/\" 2>/dev/null; done; done; exit 0",
+              "timeout": 10
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

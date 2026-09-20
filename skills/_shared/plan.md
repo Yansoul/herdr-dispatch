@@ -142,10 +142,12 @@ sees all of them before anything is created:
   `idle_incomplete`). Say which, because it changes how long a silent lane may legitimately stay
   silent.
 - **what happens when a lane finishes** — by default
-  `验证通过后自动 push 到 origin，并对 <pr-base> 开 PR（ready for review，会触发 CI 和 reviewer 通知）`,
-  or the degraded form the §2 preflight actually found (`--draft` 开草稿 PR / `--no-pr` 只 push，PR
-  命令会打印出来 / `gh 未登录，只 push，PR 命令会打印出来` / `PR base 不在 origin 上，只 push，PR 命令
-  留待你补 base` / `无 origin，只能本地提交`). Never promise a PR the preflight says you cannot open.
+  `验证通过后自动 push 到 origin，对 <pr-base> 开 PR（ready for review，会触发 CI 和 reviewer 通知），
+  再由独立 reviewer subagent 审查、按需修复并自动合并`,
+  or the degraded form the §2 preflight actually found (`--draft` 开草稿 PR，草稿不自动合并 /
+  `--no-automerge` 开到 PR 为止，review 和合并留给用户 / `--no-pr` 只 push，PR 命令会打印出来 /
+  `gh 未登录，只 push，PR 命令会打印出来` / `PR base 不在 origin 上，只 push，PR 命令留待你补 base` /
+  `无 origin，只能本地提交`). Never promise a PR the preflight says you cannot open.
 
 Then ask once with `AskUserQuestion`: 按此派发 / 计划或验收标准要改（在补充里说明改哪里） / 合并成
 更少的 lane / 我来调整. Create nothing before that answer. The confirmation covers the lane split,
@@ -204,8 +206,9 @@ silently re-designing; the **checklist** as `- [ ]` items; the **acceptance crit
 criteria exactly as confirmed, with the framing that they, not the checklist ticks, define done:
 DONE is written only when every criterion verifiably holds; **boundaries** (work only in this
 checkout, never `cd` to the main checkout, never touch another lane's files, never push, never
-merge, never open a pull request — committing is where your job ends, and the orchestrator publishes
-the branch once it has verified it); and the **commit policy** below, quoted into the brief in full.
+merge, never open a pull request — committing is where your job ends, and the orchestrator verifies,
+publishes, independently reviews and merges the branch); and the **commit policy** below, quoted
+into the brief in full.
 
 > **Commit policy.** Commit continuously as you work, never as one lump at the end. Each commit is one
 > coherent unit — a module, a file, a self-contained behaviour change — and each message follows
