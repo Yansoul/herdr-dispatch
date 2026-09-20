@@ -1,7 +1,7 @@
 {
   "name": "herdr-dispatch",
   "version": "0.1.0",
-  "description": "Dispatch tasks to codex / grok / opencode / cursor / devin agents running in isolated herdr worktrees, supervise them to completion, then push each lane and open its pull request",
+  "description": "Dispatch tasks to codex / glm / grok / opencode / cursor / devin agents running in isolated herdr worktrees, supervise them to completion, then push each lane and open its pull request",
   "author": {
     "name": "Bestony",
     "email": "bestony@linux.com",
