@@ -1,6 +1,6 @@
 # Running the dispatchers under other orchestrators
 
-The plugin's five `dispatch-*` skills are written as a Claude Code plugin, but the orchestration
+The plugin's seven `dispatch-*` skills are written as a Claude Code plugin, but the orchestration
 procedure itself is plain Markdown plus shell commands — herdr does the lane control, and every
 signal a sweep needs is on disk. Any agent CLI that (a) can read `SKILL.md` files, (b) can run
 shell commands, and (c) runs inside a herdr pane can be the orchestrator. This file records what is
@@ -52,7 +52,7 @@ Claims below were verified on 2026-09-15 against herdr 0.9.0, codex-cli 0.154.0 
   The repo carries a `.codex-plugin/plugin.json` (with `"skills": "./skills/"`) for exactly this.
   Verified: after install, a codex session lists `herdr-dispatch:dispatch-codex`,
   `herdr-dispatch:dispatch-cursor`, `herdr-dispatch:dispatch-grok`, `herdr-dispatch:dispatch-opencode`
-  (verified when those were the four; `dispatch-devin` resolves the same way, from the same
+  (verified when those were the four; `dispatch-devin` and `dispatch-mimo` resolve the same way, from the same
   `skills/` directory).
 - **Invocation is model-driven, not slash-driven.** Typing `/dispatch-cursor` into codex returns
   `Unrecognized command` (verified). Instead tell codex to use the skill: "用
