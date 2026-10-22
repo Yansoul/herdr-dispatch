@@ -98,7 +98,7 @@ What happens next:
 The plan, the questions and the final report are in Chinese; the briefs, commits and PR bodies are
 in English.
 
-## The seven dispatchers
+## The eight dispatchers
 
 Same procedure, same flags, different agent underneath. Pick by which CLI you have and how
 autonomous you want the lanes to be.
@@ -108,6 +108,7 @@ autonomous you want the lanes to be.
 | `/dispatch-codex` | codex | **Goal mode** (`/goal`). Codex auto-continues toward the objective across turns; the supervision loop is a repair path |
 | `/dispatch-glm` | glm — the codex CLI pinned to `zhipu-bigmodel-coding/glm-5.3-flash` via the opencodex proxy | **Goal mode** (`/goal`), identical to codex — the model is pinned at launch with `-c model=…`, so no interactive `/model` step exists |
 | `/dispatch-mimo` | mimo — the codex CLI pinned to `Mimo/mimo-v2.6-pro` via the opencodex proxy | **Goal mode** (`/goal`), identical to codex — the model and its reasoning effort are pinned at launch with `-c model=…`, so no interactive `/model` step exists |
+| `/dispatch-deepseek` | deepseek — the codex CLI pinned to `opencode-go/deepseek-v4.1-flash` via the opencodex proxy | **Goal mode** (`/goal`), identical to codex — the model and its reasoning effort are pinned at launch with `-c model=…`, so no interactive `/model` step exists |
 | `/dispatch-grok` | grok (Grok Build) | **Goal mode** when `[goal] enabled = true` in `~/.grok/config.toml`, otherwise one-shot + nudges. The dispatcher reads your config and tells you which regime is in force |
 | `/dispatch-opencode` | opencode | **Nudge-driven.** Opencode has no goal mode — it stops after every turn, so the loop's continuation prompt *is* the engine. Expect roughly one turn per sweep interval |
 | `/dispatch-cursor` | cursor (`cursor-agent`) | **Goal mode** (`/goal`). Cursor pursues a durable goal across turns and audits the evidence before marking it complete; the supervision loop is a repair path. There is no `--compact-at` — cursor publishes no context numbers on disk, so `/summarize` runs only as a repair step |
@@ -256,6 +257,7 @@ skills/
 │       └── supervise.md      # symlink → ../../_shared/supervise.md
 ├── dispatch-glm/             # codex CLI + GLM model pin — same shape
 ├── dispatch-mimo/            # codex CLI + Mimo model pin — same shape
+├── dispatch-deepseek/        # codex CLI + DeepSeek model pin — same shape
 ├── dispatch-grok/            # same shape
 ├── dispatch-opencode/        # same shape
 ├── dispatch-cursor/          # same shape
