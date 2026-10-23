@@ -1,0 +1,25 @@
+name: Multica bridge tests
+
+on:
+  pull_request:
+    paths:
+      - "integrations/multica_bridge/**"
+      - ".github/workflows/multica-bridge-tests.yml"
+  push:
+    branches: ["feat/multica-controller"]
+    paths:
+      - "integrations/multica_bridge/**"
+      - ".github/workflows/multica-bridge-tests.yml"
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile
+        run: python -m py_compile integrations/multica_bridge/bridge.py
+      - name: Unit tests
+        run: python -m unittest discover -s integrations/multica_bridge -p 'test_*.py' -v

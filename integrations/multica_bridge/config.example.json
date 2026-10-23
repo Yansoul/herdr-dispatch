@@ -1,0 +1,14 @@
+{
+  "workspace_id": "REPLACE_WITH_MULTICA_WORKSPACE_UUID",
+  "profile": "default",
+  "state_dir": "/absolute/private/path/multica-herdr-state",
+  "claude_home": "~/.claude",
+  "dispatcher": "dispatch-codex",
+  "poll_seconds": 30,
+  "plan_timeout_seconds": 1800,
+  "run_timeout_seconds": 1200,
+  "approver_ids": ["REPLACE_WITH_YOUR_MULTICA_USER_ID"],
+  "projects": {
+    "REPLACE_PROJECT_SLUG": "/absolute/path/to/main/git/checkout"
+  }
+}

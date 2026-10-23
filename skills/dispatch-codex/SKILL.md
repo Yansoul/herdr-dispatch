@@ -1,7 +1,7 @@
 ---
 name: dispatch-codex
 description: Dispatch one or more tasks to codex agents in herdr workspaces — the orchestrator designs each lane's plan and acceptance criteria, codex pursues them in goal mode — supervise them to completion, then push, independently review, and merge each lane's pull request. Use when the user asks to dispatch/fan out/派发 tasks to codex agents or herdr lanes, to run several codex tasks in parallel worktrees, or to resume supervision of an existing dispatch-codex run (`--resume`).
-argument-hint: '<task-1>; <task-2>; … [--lanes N] [--base <ref>] [--no-yolo] [--yolo] [--draft] [--no-pr] [--no-automerge] [--resume] [--no-loop]'
+argument-hint: '<task-1>; <task-2>; … [--approved-plan <absolute-path>] [--lanes N] [--base <ref>] [--no-yolo] [--yolo] [--draft] [--no-pr] [--no-automerge] [--resume] [--no-loop]'
 allowed-tools: Read, Write, Edit, Glob, Grep, TodoWrite, AskUserQuestion, Skill, Bash(herdr:*), Bash(git:*), Bash(gh:*), Bash(jq:*), Bash(python3:*), Bash(mkdir:*), Bash(ls:*), Bash(test:*), Bash(date:*), Bash(mv:*), Bash(cat:*), Bash(printf:*)
 ---
 
@@ -71,10 +71,11 @@ there is nothing to dispatch into — an exported `HERDR_ENV` alone can pass in 
 and a run recorded without its pane id has no working notify-back. Do not install or launch herdr,
 and do not run codex yourself.
 
-Parse flags from the raw request; everything else is task text.
+Parse flags from the raw request; everything else is task text. The bridge's `--approved-plan <absolute-path>` is a separate mode; it is not task text. It requires `--no-automerge` and follows the externally approved plan contract at the start of `references/plan.md`.
 
 | Flag | Meaning | Default |
 | --- | --- | --- |
+| `--approved-plan <absolute-path>` | Use a verified externally approved plan (see shared plan.md). Never bypass validation. | unset |
 | `--lanes N` | cap on concurrent lanes, 1–16 | 16 |
 | `--base <ref>` | base ref for lane branches | `origin/<current>` if it exists, else current branch |
 | `--no-yolo` | launch codex under the user's own approval config instead of bypassing it | off — **yolo is the default** |
