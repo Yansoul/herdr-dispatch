@@ -63,6 +63,8 @@ def issue_key(issue: dict) -> str:
 
 
 def listed_issues(value: Any) -> tuple[list[dict], bool]:
+    if isinstance(value, list):
+        return value, False
     if isinstance(value, dict) and isinstance(value.get("issues"), list):
         return value["issues"], bool(value.get("has_more", False))
     raise ValueError("Unexpected Multica issue-list JSON; refusing partial scan")
@@ -194,7 +196,7 @@ class Controller:
         offset, seen = 0, set()
         while True:
             result = self.multica("issue", "list", "--project", project,
-                                  "--status", status, "--limit", "100",
+                                  "--status", status, "--metadata", "herdr_dispatch=ready", "--limit", "100",
                                   "--offset", str(offset), "--output", "json")
             page, more = listed_issues(result)
             for item in page:
@@ -218,13 +220,10 @@ class Controller:
             # User cancellation/done takes precedence. Never restart native runs.
             if current["status"] not in ("done", "cancelled") and current["status"] != target_status:
                 self.multica("issue", "status", job["issue"], target_status, "--no-start")
-        self.multica("issue", "metadata", "set", job["issue"],
-                     "--key", "herdr_bridge_phase", "--value", job["phase"])
-        self.multica("issue", "metadata", "set", job["issue"],
-                     "--key", "herdr_bridge_job", "--value", job["job_id"])
+        self.multica("issue", "metadata", "set", job["issue"], "herdr_bridge_phase", job["phase"])
+        self.multica("issue", "metadata", "set", job["issue"], "herdr_bridge_job", job["job_id"])
         if job["error"]:
-            self.multica("issue", "metadata", "set", job["issue"],
-                         "--key", "herdr_bridge_error", "--value", job["error"][:1000])
+            self.multica("issue", "metadata", "set", job["issue"], "herdr_bridge_error", job["error"][:1000])
         self.set(job["issue"], synced_phase=job["phase"])
 
     def create(self, issue: dict, repo: str) -> dict:
@@ -300,7 +299,7 @@ class Controller:
                        + "Only configured approver accounts are accepted.\n")
             (folder / "plan-comment.md").write_text(message, encoding="utf-8")
             self.multica("issue", "comment", "add", job["issue"],
-                         "--content-file", "plan-comment.md", cwd=folder)
+                         "--content-file", str(folder / "plan-comment.md"))
         self.set(job["issue"], "awaiting_approval", plan_sha=sha)
         self.sync(self.get(job["issue"]), "in_review")
 
