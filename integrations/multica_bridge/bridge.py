@@ -22,7 +22,7 @@ import time
 from typing import Any
 
 TERMINAL = {"qa", "needs_recovery"}
-ACTIVE = {"allocating", "workspace_ready", "starting", "agent_ready",
+ACTIVE = {"allocating", "allocating_send", "workspace_ready", "starting", "agent_ready",
           "planning_send", "planning", "awaiting_approval",
           "dispatch_send", "dispatching", "executing", "qa",
           "needs_recovery"}
@@ -243,6 +243,7 @@ class Controller:
         # Critical: after an ambiguous create we DO NOT replay. Operator must
         # reconcile against the deterministic label, then run recover.
         label = "multica-" + job["job_id"]
+        self.set(job["issue"], "allocating_send")
         result = self.command(job, "workspace", "create", "--cwd", job["repo"],
                               "--label", label, "--no-focus")
         info = result["result"]
@@ -397,7 +398,7 @@ class Controller:
         elif phase in ("dispatching", "executing"):
             self.check_run(job)
         # *_send and starting are ambiguous after a restart: never replay.
-        elif phase in ("planning_send", "dispatch_send", "starting"):
+        elif phase in ("allocating_send", "planning_send", "dispatch_send", "starting"):
             self.fail(job, "Ambiguous previous side effect; reconcile before retry")
         # QA: human owns final Done transition; never automerge.
 
@@ -426,7 +427,7 @@ class Controller:
                 # For a side-effecting call this is an ambiguous outcome.
                 self.fail(job, f"{type(exc).__name__}: {exc}")
             job = self.get(key)
-            statuses = {"allocating": "in_progress", "workspace_ready": "in_progress",
+            statuses = {"allocating": "in_progress", "allocating_send": "in_progress", "workspace_ready": "in_progress",
                         "starting": "in_progress", "agent_ready": "in_progress",
                         "planning_send": "in_progress", "planning": "in_progress",
                         "awaiting_approval": "in_review", "dispatch_send": "in_progress",
