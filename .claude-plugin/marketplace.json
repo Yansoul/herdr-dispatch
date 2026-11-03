@@ -1,6 +1,6 @@
 {
   "name": "herdr-dispatch",
-  "description": "Orchestrate parallel coding agents in isolated herdr worktrees, from plan to pull request",
+  "description": "Orchestrate omp agents through local magpie routes in isolated herdr worktrees, from plan to pull request",
   "owner": {
     "name": "Bestony",
     "email": "bestony@linux.com",
@@ -10,7 +10,7 @@
     {
       "name": "herdr-dispatch",
       "source": "./",
-      "description": "Dispatch tasks to codex / glm / mimo / deepseek / grok / opencode / cursor / devin agents running in isolated herdr worktrees, supervise them to completion, then push each lane and open its pull request"
+      "description": "Dispatch tasks through omp and local magpie model routes in isolated herdr worktrees; includes eight route presets and dispatch-omp, with acceptance verification and pull request publishing"
     }
   ]
 }

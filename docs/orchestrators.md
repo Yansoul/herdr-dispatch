@@ -1,98 +1,178 @@
 # Running the dispatchers under other orchestrators
 
-The plugin's seven `dispatch-*` skills are written as a Claude Code plugin, but the orchestration
-procedure itself is plain Markdown plus shell commands — herdr does the lane control, and every
-signal a sweep needs is on disk. Any agent CLI that (a) can read `SKILL.md` files, (b) can run
-shell commands, and (c) runs inside a herdr pane can be the orchestrator. This file records what is
-**verified** for each non-Claude orchestrator, and the three Claude-isms you must substitute.
+All nine dispatch skills use the same omp lane runtime and local magpie routing policy. Eight
+names select route presets; `dispatch-omp` accepts an explicit `--model magpie/...`. The host
+orchestrator loads the skill, plans and supervises lanes, verifies acceptance criteria, and owns
+publication, independent review, fixes, merge, and scoped post-merge cleanup by default. It does not
+change the lane runtime by choosing a different preset.
 
-Claims below were verified on 2026-09-15 against herdr 0.9.0, codex-cli 0.154.0 and Kimi Code CLI
-0.43.1, on macOS.
+Runtime smoke on omp 18.15.0 verified Herdr launch, a magpie-backed goal creating and reading a
+file, goal completion metadata, exact-file restore, and scout/sonic child requests using magpie
+under a run-scoped overlay. The catalog exposed only magpie with that overlay. This does not claim
+a full worktree-to-GitHub publication run, compaction under pressure, or every upstream route was tested.
 
-## The three Claude-isms to substitute
+## Host capabilities
 
-1. **The supervision timer (§7).** The skills invoke Claude Code's `loop` skill every 5 minutes.
-   Substitutes per orchestrator below. The timer only ever fires one thing: a `--resume` sweep, so
-   any mechanism that can deliver `/dispatch-<agent> --resume` (or its equivalent prompt) into the
-   orchestrator's pane works.
-2. **The dispatch confirmation (§3).** Claude Code's `AskUserQuestion` presents the lane plan. Other
-   orchestrators should print the plan and **stop**, waiting for a plain-text confirmation —
-   behaviourally identical, one less interactive widget.
-3. **`allowed-tools` frontmatter.** Claude's permission syntax (`Bash(herdr:*)`, …). Both codex and
-   Kimi tolerate and ignore unknown frontmatter keys (verified), so no edit is needed — just run
-   each orchestrator in an approval posture where `herdr`, `git`, `gh`, `jq`, `python3` shell calls
-   can run unattended, or expect approval prompts.
+The host must be able to load `SKILL.md` and all five shared references, run shell commands, and
+operate inside the caller's herdr pane. A dispatch request authorizes routine lane grouping and
+creation of the task's worktrees, workspaces and panes. Present the concrete plan, then proceed
+without lane/pane confirmation. Ask only about unresolved scope or material choices that require
+the user's decision; honor an explicit request to review the plan before execution.
 
-## Kimi Code CLI as orchestrator — zero code changes (verified)
+Claude-style `allowed-tools` frontmatter is not a portable permission guarantee. Check how the
+installed host treats it and whether the required herdr, git, omp, jq, python3, and optional gh
+operations can run with the requested approval posture. Do not infer support from a host name or
+silently weaken the requested approval policy.
 
-- **Skill loading:** symlink or copy each `skills/dispatch-*` directory into `~/.kimi-code/skills/`
-  (user scope). Verified: a symlinked `dispatch-cursor` appears in Kimi's skill listing with its
-  description parsed correctly, `allowed-tools` frontmatter tolerated.
-- **Confirmation (§3):** Kimi has `AskUserQuestion`; works as written.
-- **Timer (§7):** Kimi has `CronCreate` — a cron task whose prompt is re-injected into the session
-  on each fire. Arm `*/5 * * * *` with a prompt naming the run id and telling the session to run
-  one `--resume` sweep per the skill files. Same lifecycle caveat as Claude's `loop`: the timer
-  dies with the session and `--resume` re-arms it. Verified end-to-end: a Kimi session dispatched a
-  cursor lane, supervised it on a `CronCreate` timer, verified and published it (see below).
-- **Trust dialog:** Kimi shows its own folder-trust prompt on a fresh worktree
-  (`Trust this folder` / `Don't trust`); herdr reports the pane `idle` through it. Resolve once —
-  the choice is remembered for that folder.
-- **Notify-back:** verified — an external `herdr agent prompt <pane>` into a live Kimi session is
-  executed as an instruction.
+Every model invocation under the dispatch workflow, including all omp model roles and delegated
+subagents, must use an explicit `magpie/...` route. A non-magpie host configuration is not a reason
+to let lane subagents inherit a different provider. The shared driver scopes routing to run or lane
+configuration: it enables only magpie, disables model fallback, and pins model roles and task agent
+model overrides. It never changes global host or omp settings.
 
-## codex as orchestrator — works, with packaging and timer caveats (verified)
+## Shared references and packaging
 
-- **Plugin install:** codex's plugin system accepts this repo's marketplace as-is:
+Every `skills/dispatch-*/references/` directory exposes these symlinks:
 
-  ```
-  codex plugin marketplace add Yansoul/herdr-dispatch --ref dispatch-cursor
-  codex plugin add herdr-dispatch@herdr-dispatch
-  ```
+| Reference | Source |
+| --- | --- |
+| `entry.md` | `../../_shared/entry.md` |
+| `routing.md` | `../../_shared/routing.md` |
+| `driver.md` | `../../_shared/driver.md` |
+| `plan.md` | `../../_shared/plan.md` |
+| `supervise.md` | `../../_shared/supervise.md` |
 
-  The repo carries a `.codex-plugin/plugin.json` (with `"skills": "./skills/"`) for exactly this.
-  Verified: after install, a codex session lists `herdr-dispatch:dispatch-codex`,
-  `herdr-dispatch:dispatch-cursor`, `herdr-dispatch:dispatch-grok`, `herdr-dispatch:dispatch-opencode`
-  (verified when those were the four; `dispatch-devin` and `dispatch-mimo` resolve the same way, from the same
-  `skills/` directory).
-- **Invocation is model-driven, not slash-driven.** Typing `/dispatch-cursor` into codex returns
-  `Unrecognized command` (verified). Instead tell codex to use the skill: "用
-  herdr-dispatch:dispatch-cursor 技能派发：…". The skill body then loads normally.
-- **Symlink caveat (verified).** codex's *plugin install cache* (`~/.codex/plugins/cache/…`) copies
-  the tree and **drops symlinks** — each skill's `references/plan.md` and `references/supervise.md`
-  go missing, and every §2–§4 / §6b–§8 cross-reference dangles. The plugin ships a `SessionStart`
-  command hook (declared in `.codex-plugin/plugin.json`) that re-materializes both files into every
-  `dispatch-*/references/` under the cache at each session start, so installs and upgrades
-  self-heal — trust the hook once when codex flags it for review. If your codex build does not run
-  plugin hooks, materialize the links by hand:
+Installing the whole repository preserves the relative links. Copying only one skill requires
+dereferencing all five references so they remain readable without a sibling `_shared/` directory.
+A skill with missing references is incomplete and must not dispatch work.
 
-  ```bash
-  cd ~/.codex/plugins/cache/herdr-dispatch/herdr-dispatch/*/skills
-  for d in dispatch-*/references; do cp _shared/plan.md _shared/supervise.md "$d/"; done
-  ```
-- **Timer (§7):** codex has **no in-session scheduler** (verified: `in_app_local_automation` is the
-  desktop app's Scheduled surface; the CLI exposes no recurring-prompt mechanism). Use an external
-  scheduler poking the pane — both injection channels are verified to be obeyed by a live codex
-  session:
+### Claude Code
 
-  ```cron
-  */5 * * * *  herdr agent prompt <orch-pane> "Run one dispatch-<agent> --resume sweep for run <run-id> now."
-  # or, codex-native:
-  */5 * * * *  codex queue --thread <session-uuid> --message "Run one dispatch-<agent> --resume sweep for run <run-id> now."
-  ```
+Install through the repository marketplace as described in the [README](../README.md), or launch
+Claude Code with `--plugin-dir` for a local checkout. The plugin-qualified skill name is, for
+example, `herdr-dispatch:dispatch-omp`. Confirm that the installed skill can read every reference.
 
-  Unlike the in-session timers, an external cron outlives the orchestrator session — add the
-  run id to the state file and make the cron job's first action "exit silently if no such run or
-  all lanes terminal", and delete the cron entry when the run ends.
-- **Confirmation (§3):** codex stops and asks in plain text; no changes needed beyond reading the
-  plan summary as the question it is.
-- **Trust dialog:** codex shows its directory-trust modal on a fresh worktree
-  (`1. Yes, continue`) and herdr reports the pane ready through it — resolve with
-  `herdr agent send-keys <pane> enter` before priming (same pattern the codex executor driver uses).
+Do not assume that a `loop` skill or timer API exists merely because the host is Claude Code.
+Detect the capabilities in the active session before arming supervision.
 
-## What is NOT yet verified
+### Codex
 
-- A full codex-orchestrated dispatch from planning to PR (the `--resume` sweep path under codex is
-  verified; a whole run is not).
-- grok / opencode as orchestrators — same substitution rules should apply, but nothing was
-  exercised.
-- Windows. Everything above is macOS.
+The repository provides `.codex-plugin/plugin.json` with `"skills": "./skills/"`. Use the installed
+Codex version's plugin interface to add this repository and enable `herdr-dispatch`. Skill invocation
+may be model-driven: ask Codex to use `herdr-dispatch:dispatch-omp` with the desired `--model` and
+task text if the host does not expose the skill as a slash command.
+
+Some Codex plugin caches omit symlinks when copying the repository. The plugin's `SessionStart`
+command hook copies **all five** shared files—`entry.md`, `routing.md`, `driver.md`, `plan.md`, and
+`supervise.md`—into each cached `dispatch-*/references/` directory, including `dispatch-omp`.
+Missing reference directories are recreated. Existing valid symlinks remain shared references;
+regular copies are refreshed on session start. A broken link or copy failure makes the hook fail.
+
+If the installed host does not run plugin hooks, materialize the references in the selected plugin
+cache version before using a skill. Set `dispatch_skills` to that version's absolute `skills`
+directory and run:
+
+```bash
+(
+  [ -d "${dispatch_skills:?Set dispatch_skills to the selected cache skills directory}/_shared" ] || exit 1
+  for skill_dir in "$dispatch_skills"/dispatch-*; do
+    [ -f "$skill_dir/SKILL.md" ] || continue
+    mkdir -p "$skill_dir/references" || exit 1
+    for reference in entry routing driver plan supervise; do
+      if [ -L "$skill_dir/references/$reference.md" ]; then
+        [ -f "$skill_dir/references/$reference.md" ] || exit 1
+        continue
+      fi
+      cp "$dispatch_skills/_shared/$reference.md" "$skill_dir/references/$reference.md" || exit 1
+    done
+  done
+)
+```
+
+Check the active Codex session for an actual recurring-prompt facility. A desktop automation API,
+a queue command, or an ability to send a prompt once does not establish that a CLI scheduler exists.
+Do not assume a native timer or install a scheduler to fill the gap.
+
+### Other skill-capable hosts
+
+A host such as Kimi can load the same entry points if its installed version supports this skill
+format and the shell and confirmation requirements above. Follow that host's skill installation
+interface, preserving or materializing every shared reference. Treat timer APIs such as `CronCreate`
+as available only when they are actually exposed with known semantics in the current session.
+No current runtime compatibility claim is made solely from earlier native-agent tests.
+
+## Supervision timers
+
+A timer is optional. A sweep is the unit of supervision, and it always names an exact skill and
+run ID:
+
+```
+Use dispatch-codex --resume --run <id> to perform one supervision sweep.
+```
+
+When a recurring timer is present, use its supported API, record its identity and lifecycle, and
+cancel the run's timer when all lanes are terminal or awaiting the user. Respect `--no-loop`. Do not
+invent tool names, cron commands, scheduled-task APIs, or assumptions about session lifetime.
+
+When no timer is available, report that supervision requires a manual resume and print the exact
+skill and `--run <id>` command. An existing external scheduler may be used only when its capability
+and authorization are established; do not install one, mutate global scheduler configuration, or
+claim that the run will keep supervising itself. Any authorized external mechanism must target the
+recorded run and stop when it is gone or all its lanes are terminal or awaiting the user.
+
+Terminal states follow shared supervision §7: `merged`, `failed`, user-paused, or `verified` with a
+recorded publication blocker. `published` is terminal only under `--no-automerge`, `--draft`,
+`--no-pr`, or a recorded merge blocker. Otherwise a published PR still needs review and merge.
+An unanswered recorded `escalated` outcome awaits the user. Completed but unpushed work is not
+terminal without a recorded blocker.
+
+## Persistent state and resume
+
+Every host uses `~/.claude/<skill>/<run>/state.json`. A compatible state has `schema_version: 2`,
+`agent_kind: "omp"`, and explicit per-lane `model`, `thinking`, `role_models`, `session_directory`,
+`session_file`, `session`, and `runtime_config` fields, plus Herdr `session_identity` when present.
+The lane's worktree, branch, and pane identity must also match before it receives input.
+
+A resume rereads state from disk and uses those recorded routes and sessions. `--run <id>` selects
+an exact run within the invoked skill's namespace; omitting it is safe only when the repository
+match is unambiguous. A preset name never substitutes for a recorded model or session path.
+
+Reject legacy schemas/runtimes without mutation: do not rewrite state, relaunch old agents, steer
+their panes, or move their branches. Version-2 prepared lanes may legitimately have null session
+fields before first launch; reconcile their recorded launch state with the pane before proceeding.
+Missing identity for a previously running lane is a blocker, never permission to guess a session.
+
+## Acceptance, publication, and cleanup
+
+Changing the host does not change the workflow boundaries. Every lane retains its own worktree,
+recorded plan, and acceptance criteria. A `DONE` marker is a claim; the orchestrator independently
+verifies the criteria, clean tree, and real commits before publication. Agents never push, open
+PRs, or merge; the orchestrator owns these actions. Missing origin or gh credentials produce
+explicit local-only or PR-creation blockers rather than fabricated success. Never force-push,
+push the base branch, or publish an unrecorded branch.
+
+The default contract follows [shared supervision §6j](../skills/_shared/supervise.md): independently
+review each PR with a fresh omp reviewer in a separately recorded pane/session, using the same
+magpie-only routing overlay. Fix findings on the lane branch, reverify affected criteria, push the
+same branch and repeat review. After three rounds with unresolved findings, record `escalated` and
+leave the PR open. Merge only when the PR is open and mergeable and all checks are successful or
+skipped; pending checks wait, and failing checks or merge blockers are surfaced. Changed diffs need
+renewed verification and review. Record the review rounds, findings, and merge SHA.
+
+`--no-automerge` leaves ready PRs for the user; `--draft` and `--no-pr` also opt out of automatic
+review and merge. Draft PRs are never marked ready automatically. For lanes left unmerged, print
+the follow-up commands, including `gh pr ready` for draft runs, instead of executing them.
+
+When the run merges a lane, immediately execute the scoped post-merge cleanup in §8.1: remove the
+recorded worktree and its workspaces, delete the eligible branch, close the run's dead workspaces,
+and remove its empty worktree parent. Remove worktrees before deleting branches. A confirmed
+merged PR permits `branch -D` after squash merge; otherwise require ancestry for `branch -d`, or
+keep the branch and report why. If a workspace ID is missing, use the recorded checkout path and
+the stale-registration procedure in §8.1. Keep unrelated resources intact.
+
+For PRs merged manually or runs closed outside that path, offer cleanup once and execute it after
+approval, checking live PR merge state first. Preserve run state and preexisting shared caches.
+Keep chat transcripts for a grace period unless the user requests earlier deletion. Verify scoped
+cleanup and report the disk freed, as §8.1 requires. The final report distinguishes PRs the run
+reviewed and merged from those left open, with their blockers and the cleanup performed. These
+rules apply to every route preset and to `dispatch-omp`.

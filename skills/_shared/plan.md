@@ -1,16 +1,15 @@
 # Dispatch — §2 to §5b (agent-independent)
 
 Shared by every `dispatch-*` skill in this plugin. Nothing here depends on which coding agent runs
-the lanes: it covers the run's bookkeeping (§2), the lane plan the user confirms (§3), the herdr
+the lanes: it covers the run's bookkeeping (§2), the lane plan the orchestrator records (§3), the herdr
 workspaces (§4), and the brief written into each lane's checkout (§5b).
 
-What *is* agent-specific — pre-flighting the pane (§5a) and launching/priming the agent (§5c) —
-lives in the calling skill's `references/driver.md`. §0 (invariants) and §1 (gate and parse) live in
-its `SKILL.md`; §6–§8 live in `references/supervise.md`. Section numbers are continuous across all
-four files, so a cross-reference means the same thing wherever you are.
+Runtime preflight (§5a) and launch (§5c) live in `references/driver.md`. Shared invariants and
+parsing (§0–§1) live in `references/entry.md`, model selection in `references/routing.md`, and
+verification/publication (§6–§8) in `references/supervise.md`. Section numbers are shared.
 
-Throughout, **the agent** means whichever CLI this skill dispatches (codex, grok, opencode…),
-and **the driver** means that skill's `references/driver.md`.
+Throughout, **the agent** means omp, and **the driver** is the shared `references/driver.md`.
+The selected preset chooses a magpie route, never a different executable.
 
 ---
 
@@ -21,9 +20,8 @@ worktree from, so stop and tell the user in Chinese that dispatch needs a git re
 to sharing the cwd. If `git rev-parse --git-dir` and `--git-common-dir` differ you are in a linked
 worktree; stop and ask the user to re-run from the main checkout.
 
-Per `~/CLAUDE.md`, run `git -C <repo> fetch origin` first and prefer `origin/<branch>` as the base, so
-lanes fan out from fresh upstream rather than a stale local branch. With no remote, use the local
-branch and say so in the plan.
+Fetch `origin` when it exists and prefer `origin/<branch>` as the base. With no remote, use
+the local branch and report that publication is unavailable.
 
 Run id: six lowercase alphanumerics derived from `date +%s`. State dir
 `~/.claude/<skill-name>/<run-id>/` — `<skill-name>` is this skill's own name, so two dispatchers
@@ -31,9 +29,9 @@ running different agents over the same repo never share a state tree. `mkdir -p`
 dir for this repo still holds non-terminal lanes, do not silently start a second one — ask the user
 whether to resume, archive, or abort.
 
-Record in the state file, before anything is created: `skill` (this skill's name), `agent_kind` (the
-herdr `--kind` the driver launches), `flags`, `repo`, `base`, and your own coordinates —
-`orchestrator_pane` from `$HERDR_PANE_ID` (always set when the §1 gate passed). Lanes notify
+Record `schema_version: 2`, `skill`, `agent_kind: "omp"`, `flags`, `repo`, `base`, the selected
+magpie `model`, `thinking`, and per-lane routing fields specified in `references/driver.md`.
+Record `orchestrator_pane` from `$HERDR_PANE_ID` (always set when the §1 gate passed). Lanes notify
 completion by prompting this pane (§5b), and each brief needs the id verbatim — never leave a lane
 to find its orchestrator with `herdr agent list`. The id stays valid until the pane closes or is
 moved to another workspace (a move re-qualifies it), and it never proves *who* is inside: if this
@@ -69,17 +67,25 @@ worth one report line in §8, not an abort.
 
 Split the task text on numbered items, newlines, or `;` — whichever the user actually used.
 
-Then **group** them. This is the most consequential judgement in the skill:
+Then **group** them for high cohesion within each lane and low coupling between lanes. Result
+quality takes priority over concurrency; maximize independent work within that constraint:
 
-- Same lane when tasks touch the same files or module, when one depends on another's output, or when
-  a human would review them together. Inside a lane the tasks are an ordered checklist.
-- Different lanes only when they can run concurrently without editing the same files. Merge cost is
-  decided here, not at merge time.
+- Each lane owns a coherent outcome, the implementation needed for it, and local self-checks.
+  Keep tasks together when they edit the same files, depend on each other's unfinished output,
+  or must change together to preserve a shared behavioral invariant.
+- Actively look for independent outcomes within a large task. Split them into different lanes only
+  when each can finish using the existing code and established interfaces, without editing the same
+  files or coordinating intermediate work with another lane. Different files alone do not prove
+  independence; belonging to the same module alone does not require a single lane.
+- Do not introduce new dependencies, cross-lane handoffs, or shared implementation scaffolding
+  merely to increase pane count. If independence is uncertain, investigate before splitting or keep
+  the work in one lane. Inside a lane, tasks remain an ordered checklist.
+- The top-level dispatch session defines acceptance criteria and owns final acceptance (§6e).
+  Lanes implement and self-check; they do not accept their own or another lane's results.
 - Never exceed `--lanes N` (default and hard max 16). If grouping yields more, merge the most related
   ones and say which and why. Do not pad the other way: three independent tasks make three lanes.
-- When lanes > 4, warn the user that all lanes share **one account for this agent**, so its rate
-  limits are shared and can throttle every lane at once. The driver names what that limit looks like
-  when it is hit.
+- When lanes > 4, report that lanes sharing a magpie upstream/account also share its quota.
+  Routing groups may span accounts; do not claim that every model shares one account.
 
 Per lane derive:
 
@@ -104,7 +110,7 @@ Per lane derive:
   type per lane; a mixed lane takes the type of its primary objective.
 - `issue` — the GitHub issue number the lane addresses, read from the task text (`#123`, a full
   issue URL, or wording like "issue 123"). Never invent one: a lane whose tasks name no issue has
-  none, and the plan table below is where the user can supply it before anything is created.
+  none; a missing optional issue number does not block dispatch.
 - `branch` — `<type>/<issue>-<slug>`, the slug serving as the alias (the issue's keyword) — e.g.
   `feature/1-init`, `fix/42-ws-timeout`. When the lane has no issue number, drop that segment:
   `<type>/<slug>`.
@@ -118,7 +124,7 @@ Per lane derive:
   itself in this skill — it executes the plan you hand it — so this must be executable as written:
   ordered steps naming the files or modules each one touches, key decisions with a one-line
   rationale each, and where a route is genuinely open, the fork named with the default you chose, so
-  the user is confirming a direction, not discovering one later. Ground every step in the repo — a
+  the user can see the direction before execution. Ground every step in the repo — a
   quick Glob/Grep/Read of the code it names, never guesswork. Steps, not prose: the lane executes
   this top to bottom and records any forced deviation in `.dispatch/progress.md` (§5b).
 - `acceptance` — the lane's acceptance criteria (presented to the user as 验收标准), authored by
@@ -127,8 +133,9 @@ Per lane derive:
   with its expected outcome, plus behavioural criteria stated concretely enough to verify from the
   diff or a command. A repo with no automated checks gets criteria over tree state and diff content
   instead, plus an explicit "no automated checks in this repo". These criteria are what the lane
-  works toward, what gates its DONE (§5b), and what §6e later re-runs with its own hands — write
-  nothing here you cannot check yourself.
+  works toward and self-checks before writing DONE (§5b). The top-level dispatch session re-runs
+  them for final acceptance (§6e); DONE is a completion claim, not acceptance. Write nothing here
+  you cannot check yourself.
 
 Present the plan in Chinese: the lane table (lane / 分支 / 包含的任务), and under each lane its
 实施计划 (the ordered steps) and 验收标准 bullets. Below that, state in **three** lines, so the user
@@ -149,12 +156,14 @@ sees all of them before anything is created:
   `gh 未登录，只 push，PR 命令会打印出来` / `PR base 不在 origin 上，只 push，PR 命令留待你补 base` /
   `无 origin，只能本地提交`). Never promise a PR the preflight says you cannot open.
 
-Then ask once with `AskUserQuestion`: 按此派发 / 计划或验收标准要改（在补充里说明改哪里） / 合并成
-更少的 lane / 我来调整. Create nothing before that answer. The confirmation covers the lane split,
-the plan **and** the acceptance criteria together — the confirmed `plan` and `acceptance` go
-verbatim into each lane's brief (§5b), so dispatching without this answer would dispatch a direction
-nobody agreed to. If the user asks for changes, rework the plan and ask again; do not start a
-partial dispatch of the lanes they did not question.
+Present this concrete plan as an informational update, then proceed directly to §4. The dispatch
+request authorizes routine lane grouping and creation of the task's worktrees, workspaces and panes;
+never ask the user to confirm the lane table, pane allocation, or permission to start them. Choose
+routine implementation details from repository conventions. Ask once with the host's question tool
+(or plain text) only when unresolved scope or a material choice requires the user's decision; do not
+turn that question into a blanket confirmation of the allocation. Record the plan and acceptance
+criteria verbatim without waiting for an acknowledgement. If the user changes the plan, incorporate
+the change before dispatch. An explicit request to review the plan before execution still applies.
 
 ---
 
@@ -194,16 +203,19 @@ them: the file must exist before the agent is primed.)
 `<checkout>/.dispatch/TASK.md`, kept out of git:
 
     mkdir -p <checkout>/.dispatch
-    printf '.dispatch/\n' >> <checkout>/.git/info/exclude
+    git -C <checkout> rev-parse --git-path info/exclude
+
+Append `.dispatch/` once to the resolved exclude file. In a linked worktree `.git` is a file,
+not a directory; never write `<checkout>/.git/info/exclude` directly.
 
 Every lane has its own checkout, so `.dispatch/` never collides between lanes and needs no per-lane
 subdirectory.
 
-The brief contains, in English: **objective**; the **plan** — the §3 plan exactly as the user
-confirmed it, with a standing instruction: execute it in order, and when reality contradicts a
+The brief contains, in English: **objective**; the **plan** — the §3 plan exactly as recorded,
+with a standing instruction: execute it in order, and when reality contradicts a
 step, record the deviation and its reason prominently in `.dispatch/progress.md` instead of
 silently re-designing; the **checklist** as `- [ ]` items; the **acceptance criteria** — the §3
-criteria exactly as confirmed, with the framing that they, not the checklist ticks, define done:
+criteria exactly as recorded, with the framing that they, not the checklist ticks, define done:
 DONE is written only when every criterion verifiably holds; **boundaries** (work only in this
 checkout, never `cd` to the main checkout, never touch another lane's files, never push, never
 merge, never open a pull request — committing is where your job ends, and the orchestrator verifies,
@@ -223,11 +235,9 @@ into the brief in full.
 > already made; correct it with a follow-up commit instead, because the orchestrator may already have
 > read the history.
 >
-> **`.gitlock` protocol** (from `~/CLAUDE.md`), pinned to the **main checkout's absolute path**
-> `<repo>` — each worktree has its own root, so a per-worktree lock would serialize nothing: before
-> each commit, create `<repo>/.gitlock`; commit; delete it. If it already exists, another lane is
-> committing — wait 30 s, re-check, and only commit once it is gone. Never delete a `.gitlock` you did
-> not create.
+> **Commit coordination.** Follow repository-local commit coordination rules when present. Do not
+> invent a machine-specific lock protocol or assume `~/CLAUDE.md` exists. Commit only this lane's
+> changes; never remove another process's lock.
 
 Then the load-bearing part:
 
@@ -248,7 +258,7 @@ until the next §7 tick. Write it into the brief with `<orch-pane>` (the §2 `or
 > **Completion notify-back.** Immediately after writing `.dispatch/DONE`, run this exact command
 > once:
 >
->     herdr agent prompt <orch-pane> "[<skill> <run-id>] lane <lane> wrote DONE — run one <skill> --resume sweep now."
+>     herdr agent prompt <orch-pane> "[<skill> <run-id>] lane <lane> wrote DONE — run one <skill> --resume --run <run-id> sweep now."
 >
 > If it errors or is rejected (e.g. `agent_blocked`), do not retry and do not investigate — the
 > orchestrator also polls on a timer and will find `.dispatch/DONE` regardless. This is the only

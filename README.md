@@ -1,279 +1,294 @@
 # herdr-dispatch
 
-A Claude Code plugin that turns one Claude session into an **orchestrator** for a fleet of coding
-agents.
+Dispatch coding work into isolated [herdr](https://herdr.dev) worktrees, execute every lane with
+**omp**, and route every model request through the local **magpie** provider.
 
-You describe the work. Claude splits it into *lanes*, gives each lane its own git worktree and its
-own agent — **codex**, **glm**, **mimo**, **grok**, **opencode**, **cursor** or **devin** — running inside a [herdr](https://herdr.dev)
-workspace, then supervises every lane on a timer until its work is verified, its branch is pushed
-and its pull request is open.
-
-The division of labour is deliberate:
-
-- **Claude plans.** It reads the repo, writes each lane's implementation plan and acceptance
-  criteria, and asks you to confirm them before anything is created.
-- **The agent executes.** Each lane gets that plan verbatim as a brief and works through it.
-- **Claude publishes.** Lanes are briefed never to push, merge, or open a PR. That one operation
-  which reaches a shared remote stays behind Claude's own verification of the acceptance criteria.
-
----
+The eight existing dispatch names are model-route presets. They share one runtime and one
+supervision protocol. `/dispatch-omp --model magpie/...` selects an explicit route without a preset.
+The orchestrator plans the lanes, checks their acceptance criteria, publishes verified branches,
+and by default carries their PRs through independent review, fixes, merge, and scoped post-merge
+cleanup. Lane agents never push, open PRs, or merge.
 
 ## Requirements
 
 | What | Why |
 | --- | --- |
-| [**herdr**](https://herdr.dev) | Creates the worktrees, workspaces and panes each lane lives in. `brew install herdr` — developed against 0.9.0 |
-| **A herdr pane** | The skills refuse to run outside one — there would be nothing to dispatch into |
-| **A git repository** | Every lane is a linked worktree branched off a base ref. Run from the main checkout, not a linked worktree |
-| **At least one agent CLI** | `codex`, `glm`, `mimo`, `grok`, `opencode`, `cursor`, or `devin` — whichever dispatcher you invoke, resolvable from the pane's own login shell (`glm` and `mimo` are the codex CLI with its model pinned — to `zhipu-bigmodel-coding/glm-5.3-flash` and `Mimo/mimo-v2.6-pro` respectively — via the opencodex proxy) |
-| **`python3`, `jq`** | Used to probe each lane's on-disk state |
-| **`gh`, authenticated** | Optional. Without it lanes are pushed but the `gh pr create` command is printed for you to run |
-| **`origin` remote** | Optional. Without it lanes stay local and are reported as such |
+| **herdr and a herdr pane** | Creates and controls the isolated worktrees, workspaces, and panes. Dispatch refuses to run outside herdr. |
+| **A git repository** | Run from the main checkout; every lane gets a linked worktree based on a recorded base ref. |
+| **omp** | The only lane runtime. It must be resolvable from each pane's login shell and support the launch, session, and routing capabilities required by the shared driver. |
+| **Local magpie routes** | Selected models must exist in the local catalog and be accessible through omp's `magpie` provider. Every model role and delegated subagent must use an explicit `magpie/...` route. |
+| **`python3`, `jq`** | Inspect persisted run and session state. |
+| **`gh`, authenticated** | Optional. Without it, verified branches can be pushed and a PR command is printed for you. |
+| **`origin` remote** | Optional. Without it, lanes stay local with a recorded publication blocker. |
 
-Nothing is installed for you. If an agent CLI or `gh` is missing, the run says so up front and
-degrades — it never installs, authenticates, or creates a missing branch on your behalf.
+Preflight checks the installed capabilities and requested routes before creating lanes. Missing omp
+support or an unavailable route is a blocker, not a reason to launch a different runtime or silently
+choose another provider. The skills do not install tools, authenticate accounts, or mutate global
+model configuration.
 
 ## Installation
 
-As a plugin — the recommended path in Claude Code:
+In Claude Code:
 
 ```
 /plugin marketplace add bestony/herdr-dispatch
 /plugin install herdr-dispatch@herdr-dispatch
 ```
 
-If the install summary says `Run /reload-plugins to activate.`, run that.
+If the install summary asks you to run `/reload-plugins`, do so.
 
-### Via skills.sh
-
-The same seven skills are also published to the [skills.sh](https://skills.sh) registry, for installs
-that are not plugin-managed — or for handing them to another agent that reads `SKILL.md`:
+The nine skills can also be installed through [skills.sh](https://skills.sh):
 
 ```bash
-npx skills add bestony/herdr-dispatch --list          # what is in the repo
-npx skills add bestony/herdr-dispatch                 # install into ./.claude/skills/
-npx skills add bestony/herdr-dispatch -g              # install into ~/.claude/skills/
-npx skills add bestony/herdr-dispatch -s dispatch-codex -a claude-code -y
+npx skills add bestony/herdr-dispatch --list
+npx skills add bestony/herdr-dispatch
+npx skills add bestony/herdr-dispatch -g
+npx skills add bestony/herdr-dispatch -s dispatch-omp -a claude-code -y
 ```
 
-Each installed skill directory is self-contained, so `/dispatch-<agent>` works from `.claude/skills/`
-with no plugin installed. Prefer the plugin when you are on Claude Code: `npx skills update` replaces
-the skill directories wholesale, and only the plugin carries a version and the marketplace entry.
+Each installed skill needs its five shared reference files. Installers that copy one skill must
+dereference its `references/` symlinks; preserving those links without the sibling `_shared/`
+directory leaves an incomplete installation. The Codex plugin includes a session-start hook to
+materialize all five files in its plugin cache. See [other orchestrators](docs/orchestrators.md).
 
-<details>
-<summary>Local development install</summary>
+For local development:
 
 ```bash
 git clone https://github.com/bestony/herdr-dispatch.git
 claude --plugin-dir ./herdr-dispatch
 ```
 
-Run `/reload-plugins` to pick up edits without restarting.
-
-</details>
+Run `/reload-plugins` after edits.
 
 ## Quick start
 
-Start Claude Code **inside a herdr pane**, in the main checkout of the repo you want the work done
-in, then:
+Start the orchestrator inside a herdr pane in the repository's main checkout:
 
 ```
 /dispatch-codex Add an owner filter to the repos list; fix the websocket reconnect timeout
 ```
 
-What happens next:
+To select a model directly, use `/dispatch-omp --model` followed by a full `magpie/...` model ID
+from the local catalog and your task text.
 
-1. Claude fetches `origin`, picks a base ref, and checks whether it will be able to push and open PRs
-   at the end — so you learn about a missing `gh` login *now*, not after ten lanes have run.
-2. It groups your tasks into lanes, and for each lane writes an implementation plan grounded in the
-   actual code plus acceptance criteria built from the repo's real check commands.
-3. It shows you the lane table plus each lane's plan and acceptance criteria, and asks once whether
-   to dispatch. **Nothing is created before you answer.**
-4. On confirmation: one worktree + workspace + agent per lane, each primed with its own brief.
-5. A supervision loop runs every 5 minutes. It probes each lane from disk, nudges the stopped ones,
-   compacts the hot ones, resolves parked dialogs, and re-runs the acceptance criteria itself on any
-   lane claiming to be done.
-6. Each lane that passes gets pushed on its own branch and opened as a pull request.
+1. Preflight checks herdr, omp, routes, the repository, and publication capabilities, then selects
+   the base ref and fetches `origin` when available.
+2. The orchestrator groups tasks into lanes with high cohesion within each lane and low coupling
+   between lanes. Quality comes first: independent outcomes run concurrently within the lane cap;
+   work requiring shared edits or intermediate handoffs stays together. It writes a concrete
+   implementation plan and acceptance criteria using the repository's actual check commands.
+3. It presents the lane table, model and thinking choices, plans, acceptance criteria, and approval
+   posture as an informational update, then proceeds without lane/pane confirmation. It asks only
+   about unresolved scope or material choices that require your decision, or if you requested plan review.
+4. Each lane gets a worktree, workspace, omp session, and its own brief as an omp goal.
+   Explicit model and role routes are recorded with the session identity.
+5. Lanes implement and self-check. The top-level dispatch session owns final acceptance: its
+   supervision sweep reads persisted state, checks live identity, continues stopped work when
+   appropriate, and independently verifies any lane claiming completion.
+6. Verified lanes are pushed on their own branches and opened as pull requests, subject to the
+   selected flags and available publication credentials.
+7. By default, an independent reviewer examines each PR the run opened. The orchestrator fixes
+   findings on the lane branch, reverifies affected criteria, and merges only when checks are green
+   and the PR is mergeable, then cleans that lane's recorded worktree and eligible branch.
 
-The plan, the questions and the final report are in Chinese; the briefs, commits and PR bodies are
-in English.
+Recurring supervision is enabled only when the orchestrator actually exposes a suitable timer.
+Without one, the report gives the exact command for a manual sweep. No scheduler is invented or
+installed. Plans, questions, and reports are in Chinese; briefs, commits, and PR bodies are in English.
 
-## The eight dispatchers
+## Dispatch names and model routes
 
-Same procedure, same flags, different agent underneath. Pick by which CLI you have and how
-autonomous you want the lanes to be.
+| Skill | Route selection |
+| --- | --- |
+| `/dispatch-codex` | Codex route preset through magpie |
+| `/dispatch-glm` | GLM route preset resolved dynamically from the live magpie catalog |
+| `/dispatch-mimo` | MiMo route preset resolved dynamically from the live magpie catalog |
+| `/dispatch-deepseek` | DeepSeek route preset through magpie |
+| `/dispatch-grok` | Grok route preset through magpie |
+| `/dispatch-opencode` | OpenCode route preset through magpie |
+| `/dispatch-cursor` | Cursor route preset through magpie |
+| `/dispatch-devin` | Devin route preset through magpie |
+| `/dispatch-omp` | Generic entry; requires an explicit `--model magpie/...` |
 
-| Skill | Agent | How a lane is driven |
-| --- | --- | --- |
-| `/dispatch-codex` | codex | **Goal mode** (`/goal`). Codex auto-continues toward the objective across turns; the supervision loop is a repair path |
-| `/dispatch-glm` | glm — the codex CLI pinned to `zhipu-bigmodel-coding/glm-5.3-flash` via the opencodex proxy | **Goal mode** (`/goal`), identical to codex — the model is pinned at launch with `-c model=…`, so no interactive `/model` step exists |
-| `/dispatch-mimo` | mimo — the codex CLI pinned to `Mimo/mimo-v2.6-pro` via the opencodex proxy | **Goal mode** (`/goal`), identical to codex — the model and its reasoning effort are pinned at launch with `-c model=…`, so no interactive `/model` step exists |
-| `/dispatch-deepseek` | deepseek — the codex CLI pinned to `opencode-go/deepseek-v4.1-flash` via the opencodex proxy | **Goal mode** (`/goal`), identical to codex — the model and its reasoning effort are pinned at launch with `-c model=…`, so no interactive `/model` step exists |
-| `/dispatch-grok` | grok (Grok Build) | **Goal mode** when `[goal] enabled = true` in `~/.grok/config.toml`, otherwise one-shot + nudges. The dispatcher reads your config and tells you which regime is in force |
-| `/dispatch-opencode` | opencode | **Nudge-driven.** Opencode has no goal mode — it stops after every turn, so the loop's continuation prompt *is* the engine. Expect roughly one turn per sweep interval |
-| `/dispatch-cursor` | cursor (`cursor-agent`) | **Goal mode** (`/goal`). Cursor pursues a durable goal across turns and audits the evidence before marking it complete; the supervision loop is a repair path. There is no `--compact-at` — cursor publishes no context numbers on disk, so `/summarize` runs only as a repair step |
-| `/dispatch-devin` | devin | **Nudge-driven.** Devin has no goal mode — it stops after every turn, so the loop's continuation prompt *is* the engine. Context compacts automatically in the background, so there is no `--compact-at` and no compaction choreography |
+The preset mappings live in [the shared routing reference](skills/_shared/routing.md). All nine
+entries execute omp. The names do not select native Codex, GLM, Mimo, DeepSeek, Grok, OpenCode,
+Cursor, or Devin CLIs. GLM and Mimo names remain available as entry points; an unavailable preset
+must stop before lane creation unless an explicit, available `--model magpie/...` override is given.
+The local catalog is authoritative for availability at dispatch time.
 
-Plugin-qualified forms work too: `/herdr-dispatch:dispatch-codex`.
-
-## Other orchestrators
-
-The skills are a Claude Code plugin, but the orchestration procedure is portable — Kimi Code CLI runs
-it with zero changes, and codex runs it with a packaging caveat and an external timer.
-**[docs/orchestrators.md](docs/orchestrators.md)** records what is verified and the three
-Claude-isms to substitute (the §7 timer, the §3 confirmation widget, and the `allowed-tools`
-frontmatter).
+Routing covers the lane model, all model roles, and every delegated subagent. Persisted routes are
+explicit and stay within magpie; neither global defaults nor an unrelated provider may supply a
+silent fallback. A run-scoped configuration overlay enables only magpie, disables model fallback,
+and pins every model role and task agent model override. It never changes global settings.
+Plugin-qualified names also work where supported, such as `/herdr-dispatch:dispatch-codex`.
 
 ## Flags
 
 ```
-/dispatch-<agent> <task-1>; <task-2>; … [flags]
+/dispatch-<preset> <task-1>; <task-2>; … [flags]
+/dispatch-omp --model magpie/<model-id> <tasks> [flags]
 ```
 
 Everything that is not a flag is task text. Tasks split on numbered items, newlines, or `;`.
 
 | Flag | Meaning | Default |
 | --- | --- | --- |
+| `--model magpie/<model-id>` | Explicit model route; checked against the local catalog | Preset route; required for `dispatch-omp` |
+| `--thinking <level>` | Explicit omp thinking setting; unsupported choices are rejected | `high` when supported, otherwise a catalog-supported level, recorded per lane |
 | `--lanes N` | Cap on concurrent lanes, 1–16 | `16` |
-| `--base <ref>` | Base ref for lane branches | `origin/<current>` if it exists, else the current branch |
-| `--no-yolo` | Run lanes under normal approval prompting instead of bypassing it | off — **yolo is the default** |
-| `--yolo` | Accepted, but redundant — already the default | on |
-| `--draft` | Open pull requests as drafts | off — **ready for review** |
-| `--no-pr` | Push each verified lane, then print the `gh pr create` command instead of running it | off |
-| `--resume` | Skip planning; run **one** supervision sweep over an existing run | off |
-| `--no-loop` | Do not arm the recurring supervision loop after dispatch | off |
-| `--compact-at N` | *(opencode only)* Send `/compact` once a lane's last turn reports ≥ N context tokens | unset — no automatic compaction |
+| `--base <ref>` | Base ref for lane branches | `origin/<current>` if available, else the current branch |
+| `--no-yolo` | Explicitly pass omp `--approval-mode always-ask`; unsupported approval controls are a preflight blocker | off |
+| `--yolo` | Request the default unattended approval posture, subject to omp capability checks | on |
+| `--draft` | Open draft PRs and opt out of automatic review/merge; marking ready remains your choice | off |
+| `--no-pr` | Push verified lanes and print the PR command; no automatic review/merge | off |
+| `--no-automerge` | Publish ready PRs, then leave review and merge to you | off — independent review, fixes, merge, and scoped cleanup are the default |
+| `--resume` | Skip planning and run one supervision sweep over an existing compatible run | off |
+| `--run <id>` | Select a specific run for resume, within this skill's state namespace | Resolve from recorded repository identity only when unambiguous |
+| `--no-loop` | Do not arm a recurring supervision timer | off |
 
-`--compact-at` takes absolute tokens rather than a percentage because opencode publishes no context
-window on disk, and the dispatcher refuses to invent a denominator. The codex and grok dispatchers
-compact on a percentage they can actually read. The cursor dispatcher does not offer `--compact-at`
-at all: cursor publishes neither a context window nor per-turn token counts on disk, so
-`/summarize` runs only as a repair step there. The devin dispatcher does not offer it either: devin
-compacts its context automatically in the background, so there is nothing for a sweep to schedule.
+Worktree isolation has no opt-out: `--no-worktree` is rejected before creation. Approval flags must
+map to capabilities actually offered by the installed omp version; native-agent permission flags
+are not reused. An inability to enforce the requested approval posture is reported before dispatch.
 
-### Two things that are not flags
-
-**Worktree isolation has no opt-out.** With approvals bypassed by default, the worktree boundary is
-the only thing keeping one lane's mistakes out of the other lanes and out of your own checkout.
-Passing `--no-worktree` stops the run before anything is created.
-
-**Yolo is the default, and it is a real trade.** An approval overlay stalls an unattended lane until
-the next sweep notices it, so lanes launch with approvals bypassed:
-
-| Agent | Launch flag | What it gives up |
-| --- | --- | --- |
-| codex | `--dangerously-bypass-approvals-and-sandbox` | Approvals **and** the sandbox |
-| glm | `--dangerously-bypass-approvals-and-sandbox` (plus `-c model=…` pinning the model) | Approvals **and** the sandbox |
-| mimo | `--dangerously-bypass-approvals-and-sandbox` (plus `-c model=…` pinning the model and effort) | Approvals **and** the sandbox |
-| grok | `--permission-mode bypassPermissions` | Approvals only — your `--sandbox` profile is left untouched, so if you have it set to `off`, the worktree is the only boundary |
-| opencode | `--auto` | Approvals only, and opencode's own help calls it dangerous. There is no sandbox either way |
-| cursor | `--force` (plus `--trust` for the workspace-trust dialog) | Approvals only — your `--sandbox` setting is left untouched, so if it is off, the worktree is the only boundary |
-| devin | `--permission-mode dangerous` | Approvals only — devin's `--sandbox` is a research preview, off by default and left untouched, so the worktree is the only boundary |
-
-Pass `--no-yolo` to keep prompting; the loop then resolves each overlay itself, at the cost of a lane
-pausing between sweeps. Under `--no-yolo` the flag is passed through *explicitly* rather than merely
-omitted, because a global `yolo = true` in the agent's own config would otherwise leave the lane
-auto-approving while the plan summary claimed the opposite.
+omp handles context compaction automatically. The legacy `--compact-at` option is no longer supported.
 
 ## Resuming and stopping
 
-The supervision loop lives in your Claude session. If the session ends, the timer dies with it —
-lanes keep working, but nobody is watching. Bring supervision back with:
+A resume command names the skill that created the run and preferably its exact run ID:
 
 ```
-/dispatch-codex --resume
+/dispatch-codex --resume --run <id>
+/dispatch-omp --resume --run <id> --no-loop
 ```
 
-A `--resume` sweep finds the run by scanning state files for one matching your cwd, runs one full
-sweep, re-arms the timer, and re-records the pane to notify. Conversation memory is never trusted:
-**the state file is the only truth**, and every sweep starts by re-reading it.
+The state file is the source of truth, and every sweep rereads it. With no `--run`, selection must
+be unambiguous for the current repository; it must never pick an arbitrary run. Resuming uses the
+recorded lane routes and session identities rather than reconstructing them from a preset name or
+conversation memory.
 
-The loop stops on its own once every lane is terminal — published, failed, paused by you, or
-verified-but-unpublishable with a recorded reason — and tells you which lanes are waiting on what.
+A timer, when available, must target the exact skill and run ID. Its lifetime and cancellation
+behavior come from the detected scheduler. Stop it when every lane is terminal or awaiting the
+user. Terminal means `merged`, `failed`, user-paused, or `verified` with a recorded publication
+blocker. `published` is terminal only with `--no-automerge`, `--draft`, `--no-pr`, or a recorded
+merge blocker; otherwise supervision continues through review and merge. An unanswered recorded
+`escalated` outcome awaits the user. A completed but unpushed branch is not terminal without a
+recorded blocker. A session ending may leave lanes running without supervision; resume restores
+supervision only through supported capabilities.
+
+**Legacy runs are rejected without mutation.** A run without `schema_version: 2` or with a different
+`agent_kind` is not upgraded or steered. Its files, panes, sessions and branches remain untouched.
+Version-2 prepared lanes can have null session fields until launch; a running lane with missing
+identity is blocked until reconciled, never attached to a guessed session.
 
 ## What a run leaves on disk
 
-```
-~/.claude/dispatch-<agent>/
-├── bin/lane_state.py       # the on-disk probe helper — written once, shared by every run
-└── <run-id>/
-    ├── state.json          # the run's only source of truth, rewritten atomically each sweep
-    └── <lane>-pr.md        # PR body, written to a file so multi-line quoting can't break
+Run state lives at `~/.claude/<skill>/<run>/state.json`, including when another supported host is the
+orchestrator. `<skill>` is the invoked name, such as `dispatch-codex` or `dispatch-omp`.
 
-<lane-checkout>/.dispatch/    # git-excluded via .git/info/exclude
-├── TASK.md             # objective, confirmed plan, checklist, acceptance criteria, boundaries
-├── progress.md         # rewritten by the lane after every checklist item
-└── DONE                # written only when the lane believes every criterion holds
-```
+Each state file has `schema_version: 2` and `agent_kind: "omp"`. Each lane records its explicit
+`model`, `thinking`, `role_models`, `session_file`, `session_directory`, `session` (the session
+header ID), and `runtime_config`, plus Herdr `session_identity` when present. It also records the
+repository, worktree, branch, pane, and progress identity. Session paths are recorded from the
+actual runtime and checked before any steering; a reused lane name is insufficient evidence.
+State updates are atomic.
 
-`.dispatch/progress.md` is the lane's memory across compaction, and it is what the next continuation
-prompt is built from. `DONE` is a claim, not a verdict — Claude re-runs the acceptance criteria
-itself before believing it.
+Each lane checkout contains a git-excluded `.dispatch/` directory:
 
-## What it will not do
+- `TASK.md`: objective, recorded plan, checklist, acceptance criteria, and boundaries.
+- `progress.md`: the lane's persisted progress, used when continuing work.
+- `DONE`: the lane's claim that every criterion holds.
 
-These are invariants, not defaults:
+Run artifacts also include PR bodies written to files to preserve multiline content. `DONE` is a
+claim, not acceptance: the orchestrator reruns the recorded criteria before publication.
 
-- **Never force-push**, never push the base branch, never push a branch absent from the state file.
-- **Never merge**, never `worktree remove`, never delete a session or a worktree. Those commands are
-  *printed* at the end for you to run.
-- **Never touch what it did not create.** Lane names carry no run id and are reusable, so identity is
-  re-confirmed from the recorded session id before any lane is steered.
-- **Never approve a lane's request to push or open a PR.** A lane asking for that misread its brief;
-  it gets surfaced to you, not approved.
-- **Never report a half-finished lane as complete.** A lane is done when its tree is clean, its
-  commits are real, and every acceptance criterion has been re-verified by the orchestrator.
+## Publication, review, and cleanup
 
-## Cleanup after a run
+These invariants apply to every preset and to `dispatch-omp`:
 
-The final report prints these — it does not run them. Order matters: `worktree remove` comes first,
-because git refuses to delete a local branch still checked out in a worktree.
+- Never force-push, push the base branch, or push a branch absent from the run state.
+- Lanes never push, open PRs, or merge. A lane requesting publication is reported rather than
+  granted permission; the orchestrator owns publication after verification.
+- Completion requires a clean tree, real commits, and independently verified acceptance criteria.
+- Never steer a session or pane without checking it against the recorded identity.
+- Review and merge only PRs this run opened. Independent review uses a fresh omp session in a
+  separately recorded pane, with a magpie-only overlay and no share in the code's authorship.
+- Preserve live lanes, unrelated workspaces and branches, the run's state directory, shared caches,
+  and chat transcripts. Cleanup is scoped to the run and its confirmed lifecycle state.
+
+The default lifecycle continues after publication. A fresh reviewer checks correctness, security,
+acceptance coverage, and conventions. Findings are fixed on the lane's existing branch, affected
+acceptance checks are rerun, and the same branch is pushed without force. After three review rounds
+with unresolved findings, record `escalated`, leave the PR open, and report the findings.
+
+Merge only an open, mergeable PR with all checks successful or skipped. Pending checks wait for the
+next sweep; failing checks and merge blockers are surfaced. Resolve conflicts on the lane branch,
+reverify, and obtain review of the updated diff without bypassing the push rules. Use the repo's
+merge recipe, normally squash merge with remote branch deletion, and record the merge SHA.
+`--no-automerge`, `--draft`, and `--no-pr` opt out of this automatic review/merge path; draft PRs are
+never marked ready automatically.
+
+After the run merges a lane, immediately perform the scoped cleanup in
+[supervise.md §8.1](skills/_shared/supervise.md): remove its recorded worktree and workspaces,
+delete the eligible local branch, close its dead workspaces, and remove its empty worktree parent.
+Worktrees come before branch deletion. A branch with a confirmed merged PR may need `branch -D`
+after squash merge; without a merged PR, use `branch -d` only when ancestry proves it merged, and
+otherwise keep it. Missing workspace IDs require the recorded checkout-path cleanup and stale
+worktree-registration handling described in §8.1. Never clean unrelated resources.
+
+For PRs merged manually or runs closed outside that default path, offer post-merge cleanup once;
+after approval, check live PR merge state and execute the same scoped procedure. Preserve the run
+state as the audit trail and shared caches that predate the run. Keep chat transcripts by default,
+offering deletion after a grace period unless the user explicitly requests it sooner.
+
+For lanes left unmerged, the final report prints follow-up commands instead of running them:
 
 ```bash
-herdr worktree remove --workspace <ws>            # destroys the checkout AND kills its agent
-gh pr merge <pr-number> --squash --delete-branch  # per lane, after you have reviewed it
-git -C <repo> branch -d <branch>                  # only if the branch outlived the merge
+herdr worktree remove --workspace <ws>
+gh pr merge <pr-number> --squash --delete-branch
+git -C <repo> branch -d <branch>
 ```
 
-`herdr worktree create` produces **two** workspaces per lane — the linked worktree and one for the
-base repo — so expect two ids to clean up. And `worktree remove` discards uncommitted work in that
-checkout even without `--force`.
+For draft runs, print `gh pr ready <pr-number>` before the merge command. Explain that worktree
+removal destroys the checkout, stops its agent, and discards uncommitted work; identify both recorded
+workspace IDs when herdr created two. Note the squash-merge branch-deletion rule above. The report
+distinguishes PRs reviewed and merged by the run from those left open, records review rounds,
+findings, merge SHAs and blockers, and lists cleanup performed and disk freed.
 
 ## Repository layout
 
 ```
 .claude-plugin/
-├── plugin.json               # plugin manifest
-└── marketplace.json          # lets this repo host itself as a marketplace
+├── plugin.json
+└── marketplace.json
+.codex-plugin/
+└── plugin.json                  # materializes all five shared references in the plugin cache
 skills/
 ├── _shared/
-│   ├── plan.md               # §2–§4, §5b — bookkeeping, lane plan, workspaces, brief
-│   └── supervise.md          # §6b, §6e–§6f, §6i, §7, §8 — poll, verify, publish, loop, report
+│   ├── entry.md                 # entry, flags, capability gates, state contract
+│   ├── routing.md               # magpie routes, roles, and model availability
+│   ├── driver.md                # common omp launch and session protocol
+│   ├── plan.md                  # lane plans, worktrees, briefs, and bookkeeping
+│   └── supervise.md             # resume, acceptance, publication, timer, and report
+├── dispatch-omp/                # generic explicit-model entry
 ├── dispatch-codex/
-│   ├── SKILL.md              # §0 invariants, §1 gate and parse
-│   └── references/
-│       ├── driver.md         # §5a, §5c, §6a, §6c, §6d, §6g, §6h — everything codex-specific
-│       ├── plan.md           # symlink → ../../_shared/plan.md
-│       └── supervise.md      # symlink → ../../_shared/supervise.md
-├── dispatch-glm/             # codex CLI + GLM model pin — same shape
-├── dispatch-mimo/            # codex CLI + Mimo model pin — same shape
-├── dispatch-deepseek/        # codex CLI + DeepSeek model pin — same shape
-├── dispatch-grok/            # same shape
-├── dispatch-opencode/        # same shape
-├── dispatch-cursor/          # same shape
-└── dispatch-devin/           # same shape
+├── dispatch-glm/
+├── dispatch-mimo/
+├── dispatch-deepseek/
+├── dispatch-grok/
+├── dispatch-opencode/
+├── dispatch-cursor/
+└── dispatch-devin/
 ```
 
-Each dispatcher is four files with **continuous section numbers §0–§8**, so a cross-reference means
-the same thing wherever you are. Adding another agent means writing one `SKILL.md` and one
-`driver.md`, plus the two `references/` symlinks; `_shared/` itself is reused untouched.
+Every dispatch directory contains a `SKILL.md` entry and a `references/` directory with five
+symlinks: `entry.md`, `routing.md`, `driver.md`, `plan.md`, and `supervise.md`, each pointing to
+`../../_shared/<name>.md`. Shared behavior and the omp driver have one source; presets select
+routes rather than maintain separate runtime implementations.
 
-The symlinks exist because the skills.sh installer copies a skill directory **on its own** — its
-`--copy` mode and its canonical staging both dereference symlinks, so `../_shared/` would otherwise
-arrive as a dangling path and every §2–§4 and §6b–§8 reference in the installed skill would point at
-nothing. They keep the shared halves single-sourced in the repo while resolving after install.
-`ponytail:` this depends on the installer dereferencing symlinks rather than preserving them; if a
-future CLI version changes that, the fix is to copy the two files into each `references/`.
+## Verification status
+
+The omp/magpie migration has no completed end-to-end smoke verification recorded here yet.
+Historical tests of the native-agent dispatchers do not verify the new runtime. See
+[orchestrator integration notes](docs/orchestrators.md) for packaging and capability requirements.
 
 ## License
 

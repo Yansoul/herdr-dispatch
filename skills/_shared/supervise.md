@@ -17,7 +17,7 @@ calling skill's `references/driver.md`:
 | §6j | here | review, fix, and merge a published lane |
 | §7, §8 | here | arm the loop, report |
 
-Reread §0 (in `SKILL.md`) before every sweep.
+Reread §0 in `references/entry.md` before every sweep; reject legacy state before mutation.
 
 ## The probe contract
 
@@ -60,10 +60,9 @@ diagnose — the three cases look alike and only one is yours to act on:
   §6h restart recipe — or the user's own hand). If the state file shows a restart in flight, finish
   that recipe; otherwise surface it to the user instead of guessing, because steering someone else's
   thread and abandoning your own look identical from here.
-- the name resolves to nothing → the agent exited. A non-terminal lane is relaunched per the
-  driver's §5c on its recorded pane once it is back at a shell (§5a's checks apply again), then
-  re-primed. The §6h restart recipe does not apply — it prompts a live agent, and there is none
-  left here.
+- the name resolves to nothing → inspect the recorded pane. Only after it is back at a shell,
+  restore the recorded omp session using the driver's §6h. Do not launch a fresh goal or discard
+  history merely because the process exited.
 
 **Prompt guard — the one sanctioned exception to the no-pane-reads rule.** Immediately before *any*
 input this sweep sends a lane — a slash command, a steering or continuation prompt — do ONE
@@ -75,18 +74,23 @@ nothing: a prompt submitted at a parked list presses its highlighted default. Re
 
 ## §6e Verify a finished lane
 
+The top-level dispatch session owns this acceptance step. Each lane implements and self-checks
+its own coherent outcome; do not ask lanes to accept one another's work. The main session must
+perform the checks below itself and judge the result against the user's requested outcome.
+The independent PR review in §6j supplements this acceptance; it does not replace it.
+
 `agent_status` is not evidence, and neither is the lane's own `.dispatch/DONE`:
 
     git -C <checkout> status --porcelain              # must be empty
     git -C <checkout> log --oneline <base>..<branch>  # must be non-empty
 
-plus the **acceptance criteria, re-run by you**: execute each §3-confirmed criterion's command from
+plus the **acceptance criteria, re-run by you**: execute each §3-recorded criterion's command from
 TASK.md in the lane's checkout and require its expected outcome; judge the non-mechanical criteria
 from the diff and `.dispatch/progress.md`. The lane already claims they pass — that claim is what
 you are checking, not what you are accepting. Any agent-side "objective complete" signal the driver
 reports is corroboration that the agent considers itself done, never a substitute for the criteria.
 Also read `progress.md` to confirm every checklist item is ticked and to see whether the lane
-recorded a deviation from the §3-confirmed plan. A recorded deviation is not a failure — judge the
+recorded a deviation from the §3-recorded plan. A recorded deviation is not a failure — judge the
 result on its merits — but it must surface in the PR body (§6f) and the §8 report, never silently.
 If a lane claims done but fails any of these, send a corrective prompt and keep it open. Never
 report a half-finished lane as complete.
@@ -164,9 +168,9 @@ head branch that already has a PR, and a sweep that treats that error as failure
   lane carries an issue number, so the merge closes it; a short summary distilled from
   `.dispatch/progress.md` (that file is git-excluded per §5b, so the reviewer cannot open it — carry
   it over, do not link to it); the acceptance criteria with each one's verified outcome (§6e);
-  any recorded deviation from the §3-confirmed plan, stated as such; and a provenance line naming
-  the run id, the lane, **which agent and version wrote the code**, and the approval posture it ran
-  under. The reviewer should know what they are reading before they start reading it.
+  any recorded deviation from the §3-recorded plan, stated as such; and a provenance line naming
+  the run id, lane, **omp version, requested magpie route, thinking and role routes**, and approval
+  posture. A magpie routing group identifies the requested route, not a guaranteed physical upstream.
 
 **5. Close the lane.** Record `pr_url` and set the phase to `published`. On failure, record the
 stderr and bump `publish_attempts`; after 3 failed attempts stop retrying, record that as the
@@ -185,13 +189,14 @@ it finds, and the merge. It runs per lane, only ever on PRs this run opened, and
 like §6f — record `review_rounds`, findings, and `merge_sha` in the state file and skip whatever a
 prior sweep already did.
 
-**1. Review with eyes that did not write the code.** Spawn a subagent — a fresh, independent agent
-with no share in this run's authorship — pointed at `gh pr diff <pr>`, the lane's §3-confirmed
-acceptance criteria, and TASK.md / `.dispatch/progress.md` in the checkout. Its brief: find
-correctness bugs, security issues, uncovered acceptance criteria and convention breaks; report each
-finding with file, line and severity; answer "no findings" explicitly when there are none. Your own
-read of the diff is corroboration, never the review — you already verified this work for §6f, and
-the same eyes miss the same things twice.
+**1. Review with eyes that did not write the code.** Start a fresh independent omp reviewer through
+the same magpie-only overlay and routing preflight as the lane (driver §5a/§5c), in a separate
+recorded pane/session attached to the lane checkout. Give it a read-only review objective: inspect
+`gh pr diff <pr>`, the recorded acceptance criteria, TASK.md and progress.md; report correctness,
+security and acceptance failures with file, line and severity, or explicitly no findings. It must
+not edit, commit, publish or merge. Record its session and route separately. Never use a host-native
+subagent whose runtime/provider bypasses omp/magpie. The orchestrator's own read is corroboration,
+not the independent review.
 
 **2. Fix what it finds, on the lane's own branch.** Prefer the lane's agent when it is still alive —
 §6d steering applies, and it holds the context that wrote the code. When the agent has exited or the
@@ -236,10 +241,14 @@ such lanes as awaiting-user.
 
 ## §7 Arm the recurring loop
 
-Unless `--no-loop`, after dispatch invoke the `loop` skill with `5m` and this skill's own `--resume`
-invocation (the slash form that actually resolves here — `/dispatch-<agent> --resume`, or the
-plugin-qualified `/herdr-dispatch:dispatch-<agent> --resume`), so supervision continues on a timer
-without holding the session.
+Unless `--no-loop`, detect the orchestrator's actual scheduling capability. With an available
+in-session loop/cron tool, arm it for 5 minutes with the exact skill and `--resume --run <run-id>`.
+Record the timer id, owner session and cancellation mechanism. Do not assume Claude's `loop` exists
+under omp. An already configured external scheduler may be used only with an identity guard that
+checks the recorded orchestrator session and run before prompting its pane; a pane id alone is not
+identity. Never install a system cron or background daemon implicitly. If no supported timer exists,
+record `timer_status: unavailable`, report manual supervision and the exact resume command; never
+claim a recurring loop was armed. See `docs/orchestrators.md` for host-specific capabilities.
 
 The timer is the **fallback** for a finished lane — that announces itself through the §5b
 notify-back — but it is the **only** thing that recovers everything which arrives silently: stalls,
@@ -248,11 +257,11 @@ a rate limit that parked the agent, and any notify-back that was rejected while 
 blocked. That is what keeps 5 minutes load-bearing. **The less autonomous the agent, the more the
 timer *is* the engine** — the driver's §6c says which regime it is in.
 
-Tell the user in Chinese that it is armed and how to stop it. Each tick is exactly one §6 sweep; a
-tick landing right after a notify-back sweep is harmless — sweeps are idempotent. A `--resume` sweep
-in a session with no armed loop re-arms it whenever non-terminal lanes remain (unless the run's
-recorded flags say `--no-loop`) and re-records `orchestrator_pane` as the current pane — that is how
-a run whose original session died gets its supervision back (§2).
+Report whether scheduling actually succeeded and how to stop that specific timer. Each tick is one
+idempotent sweep. On resume, re-arm only when nonterminal lanes remain, no valid timer exists and
+--no-loop is absent. Re-record the current orchestrator identity and pane, and rewrite unfinished
+lanes' TASK.md notify-back targets to that identity's pane before continuing them. Never leave
+finished lanes ringing a recycled old pane. A missing timer stays an explicit limitation.
 
 `--no-loop` disarms only the timer; the briefs still carry the notify-back, but that signal alone is
 lossy — a ring landing while this session is blocked (an open `AskUserQuestion`, a permission
@@ -278,7 +287,7 @@ tool's ceiling and holds the session hostage.
 Per lane: 分支, checkout 路径, 状态, 已完成/剩余清单项, commit 数（§6e 判定粒度过粗的，在这里标注一下）,
 **验收标准逐条结果**（每条：通过/未通过/无法机械验证时给依据）, 该 agent 的运行情况（driver 的 §6a
 报的状态字段、token/用量、有无暂停 / 限流 / 阻塞经历；驱动方式降级过的写明原因）,
-是否偏离已确认的实施计划（有则一句话说明偏在哪、为什么）, compaction 次数,
+是否偏离已记录的实施计划（有则一句话说明偏在哪、为什么）, compaction 次数,
 **PR 链接**（未开成的写明原因，别留空）, **review 与 merge 结果**（merged 的给 merge sha、review
 轮数和 §8.1 清掉了什么；没合的写明卡在 §6j 哪一步）.
 
@@ -332,13 +341,10 @@ saw the lane as `published`.
      `git -C <repo> branch -D <branch>` is safe.
    - no merged PR, but `git merge-base --is-ancestor <branch> origin/<base>` → `branch -d`.
    - neither → the branch still holds work nobody merged: keep it, and say why in the report.
-3. Sweep the residue the state file cannot see. A workspace outlives its checkout: when a lane's
-   worktree directory was deleted out-of-band (a manual `rm`, a crashed run, a different session's
-   cleanup), the herdr workspace stays behind pointing at nothing. List workspaces, `test -d` each
-   `checkout_path`, and `herdr workspace close` the ones whose path is gone — a workspace with no
-   checkout can only dead-end, so closing it destroys nothing. Then `rmdir` the lane's empty parent
-   directory under `~/.herdr/worktrees/<repo>/`: it survives every `worktree remove` and collects
-   one stale entry per repo otherwise.
+3. Clean only workspaces and parent directories recorded as created by this run. If a recorded
+   workspace outlived its checkout, confirm its current identity and missing path before closing it.
+   Never close unrelated workspaces discovered by a global scan. Remove a recorded parent directory
+   only when it is empty and owned by this run.
 4. Verify with `git -C <repo> worktree list` that only worktrees belonging to other runs remain, and
    report the disk freed (`du -sh` before/after is one line each).
 
