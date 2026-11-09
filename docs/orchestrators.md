@@ -1,8 +1,8 @@
 # Running the dispatchers under other orchestrators
 
 All nine dispatch skills use the same omp lane runtime and local magpie routing policy. Eight
-names select route presets; `dispatch-omp` accepts an explicit `--model magpie/...`. The host
-orchestrator loads the skill, plans and supervises lanes, verifies acceptance criteria, and owns
+names select models; `dispatch-omp` accepts a model ID or a user-supplied exact magpie catalog selector.
+The host orchestrator loads the skill, plans and supervises lanes, verifies acceptance criteria, and owns
 publication, independent review, fixes, merge, and scoped post-merge cleanup by default. It does not
 change the lane runtime by choosing a different preset.
 
@@ -11,16 +11,29 @@ file, goal completion metadata, exact-file restore, and scout/sonic child reques
 under a run-scoped overlay. The catalog exposed only magpie with that overlay. This does not claim
 a full worktree-to-GitHub publication run, compaction under pressure, or every upstream route was tested.
 
+On omp 18.16.0, isolated print-mode tasks verified real read/write/read tool exchanges through
+the GPT-6 Astra auto group and the sole exposed DeepSeek V4.1 Flash entry. Artifacts matched
+the input nonce and computed total; session-matched magpie usage confirmed the served model
+and HTTP 200 without a model swap. GLM reached its catalog route but failed on insufficient
+upstream balance. Launch success therefore requires a successful model/tool exchange with
+matching response metadata, not just catalog presence or a created session. Full Herdr goal
+and publication lifecycle coverage remains as described above.
+
 ## Host capabilities
 
 The host must be able to load `SKILL.md` and all five shared references, run shell commands, and
-operate inside the caller's herdr pane. A dispatch request authorizes routine lane grouping and
-creation of the task's worktrees, workspaces and panes. Present the concrete plan, then proceed
+operate inside the caller's herdr pane (classic) or herdr-core terminal (`hc`). Dispatch detects the
+backend in entry §1 and records it as `mux`: herdr panes are created through `herdr worktree create`
+and `herdr agent start`; hc lanes run as `hc run --outlive-parent --keep` child terminals with
+`dispatch.*` labels, whose status notes reach the orchestrator automatically. A dispatch request
+authorizes routine lane grouping and
+creation of the task's worktrees, workspaces and terminals. Present the concrete plan, then proceed
 without lane/pane confirmation. Ask only about unresolved scope or material choices that require
 the user's decision; honor an explicit request to review the plan before execution.
 
 Claude-style `allowed-tools` frontmatter is not a portable permission guarantee. Check how the
-installed host treats it and whether the required herdr, git, omp, jq, python3, and optional gh
+installed host treats it and whether the required multiplexer (`herdr` or `hc`), git, omp, jq,
+python3, and optional gh
 operations can run with the requested approval posture. Do not infer support from a host name or
 silently weaken the requested approval policy.
 
@@ -29,6 +42,14 @@ subagents, must use an explicit `magpie/...` route. A non-magpie host configurat
 to let lane subagents inherit a different provider. The shared driver scopes routing to run or lane
 configuration: it enables only magpie, disables model fallback, and pins model roles and task agent
 model overrides. It never changes global host or omp settings.
+
+Model selection must follow the shared routing reference: presets never select a supplier. Resolve
+the model to its existing magpie group, or the sole catalog entry if no group exists. Multiple
+supplier entries without an unambiguous model group block dispatch; do not choose a supplier or
+alter magpie configuration. Model/version ambiguity is distinct from supplier routing. Honor any
+user-supplied exact `--model magpie/...` chat selector, including supplier entries; the skill must
+not infer that preference itself. If magpie exposes a model absent from omp's catalog, refresh
+once using the launch overlay and diagnose any remaining adapter mismatch before declaring it unavailable.
 
 ## Shared references and packaging
 

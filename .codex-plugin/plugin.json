@@ -1,7 +1,7 @@
 {
   "name": "herdr-dispatch",
   "version": "0.1.0",
-  "description": "Dispatch tasks through omp and local magpie model routes in isolated herdr worktrees; includes eight route presets and dispatch-omp, with acceptance verification and pull request publishing",
+  "description": "Dispatch tasks through omp in isolated herdr/herdr-core worktrees; eight model presets and dispatch-omp select models while magpie owns supplier routing, with acceptance verification and pull request publishing",
   "author": {
     "name": "Bestony",
     "email": "bestony@linux.com",

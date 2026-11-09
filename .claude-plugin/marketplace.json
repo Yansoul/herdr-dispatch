@@ -1,6 +1,6 @@
 {
   "name": "herdr-dispatch",
-  "description": "Orchestrate omp agents through local magpie routes in isolated herdr worktrees, from plan to pull request",
+  "description": "Orchestrate omp agents through local magpie routes in isolated herdr/herdr-core worktrees, from plan to pull request",
   "owner": {
     "name": "Bestony",
     "email": "bestony@linux.com",
@@ -10,7 +10,7 @@
     {
       "name": "herdr-dispatch",
       "source": "./",
-      "description": "Dispatch tasks through omp and local magpie model routes in isolated herdr worktrees; includes eight route presets and dispatch-omp, with acceptance verification and pull request publishing"
+      "description": "Dispatch tasks through omp in isolated herdr/herdr-core worktrees; eight model presets and dispatch-omp select models while magpie owns supplier routing, with acceptance verification and pull request publishing"
     }
   ]
 }

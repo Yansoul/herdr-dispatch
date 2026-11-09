@@ -42,31 +42,36 @@ that cannot see `used_pct` does not guess one, it reports `null` and leans on `m
 
 ## §6b Poll the whole fleet in one call
 
-`herdr agent list` returns every lane's `agent_status` and `state_change_seq` at once. Do not read
-panes during a normal sweep — it costs context and tells you less than the lane's own on-disk record
-does.
+`herdr agent list` / `hc ls --json` returns every lane's status at once (`agent_status` +
+`state_change_seq` on herdr; `agent` + `status` + `turn`/`status_ms` on hc). Do not read
+terminals during a normal sweep — it costs context and tells you less than the lane's own on-disk
+record does. On `hc`, `hc ls --label dispatch.run=<run-id>` scopes the listing to this run's lanes.
 
 Names alone do not prove identity. Lane names carry no run id and are re-usable the moment an agent
 exits, so a name in your state file can now belong to a later run's agent or to one the user started
 by hand. Before steering any lane by name — prompt, send-keys, compact — confirm the session id
-from `herdr agent get <lane>` (or the driver's own identity check, when its agent has no herdr-visible
-session) still matches the one recorded in the state file (§6a). On a mismatch, stop steering and
+from `herdr agent get <lane>` / `hc get <lane> --json` (or the driver's own identity check, when its
+agent exposes no session through the mux) still matches the one recorded in the state file (§6a). On
+a mismatch, stop steering and
 diagnose — the three cases look alike and only one is yours to act on:
 
-- the name resolves to an agent in some *other* workspace → a stranger re-claimed a released name.
-  Never touch it (§0.4); surface the lane.
-- the name resolves in the lane's own recorded pane, under a different id → not necessarily a
+- the name resolves to an agent that is not this run's — some *other* workspace on herdr, or a
+  terminal missing this run's `dispatch.run`/`dispatch.lane` labels on hc → a stranger re-claimed a
+  released name. Never touch it (§0.4); surface the lane.
+- the name resolves in the lane's own recorded terminal, under a different session id → not
+  necessarily a
   stranger: the id also changes when a fresh thread starts in the same agent process (the driver's
   §6h restart recipe — or the user's own hand). If the state file shows a restart in flight, finish
   that recipe; otherwise surface it to the user instead of guessing, because steering someone else's
   thread and abandoning your own look identical from here.
-- the name resolves to nothing → inspect the recorded pane. Only after it is back at a shell,
+- the name resolves to nothing → inspect the recorded terminal. Only after it is back at a shell,
   restore the recorded omp session using the driver's §6h. Do not launch a fresh goal or discard
   history merely because the process exited.
 
-**Prompt guard — the one sanctioned exception to the no-pane-reads rule.** Immediately before *any*
+**Prompt guard — the one sanctioned exception to the no-terminal-reads rule.** Immediately before *any*
 input this sweep sends a lane — a slash command, a steering or continuation prompt — do ONE
-`herdr agent read <lane> --source visible`. If a selection list or modal is parked there, send
+`herdr agent read <lane> --source visible` / `hc read <lane>`. If a selection list or modal is parked
+there, send
 nothing: a prompt submitted at a parked list presses its highlighted default. Resolve it first
 (§6d/§6g).
 
@@ -191,7 +196,7 @@ prior sweep already did.
 
 **1. Review with eyes that did not write the code.** Start a fresh independent omp reviewer through
 the same magpie-only overlay and routing preflight as the lane (driver §5a/§5c), in a separate
-recorded pane/session attached to the lane checkout. Give it a read-only review objective: inspect
+recorded terminal/session attached to the lane checkout. Give it a read-only review objective: inspect
 `gh pr diff <pr>`, the recorded acceptance criteria, TASK.md and progress.md; report correctness,
 security and acceptance failures with file, line and severity, or explicitly no findings. It must
 not edit, commit, publish or merge. Record its session and route separately. Never use a host-native
@@ -245,27 +250,32 @@ Unless `--no-loop`, detect the orchestrator's actual scheduling capability. With
 in-session loop/cron tool, arm it for 5 minutes with the exact skill and `--resume --run <run-id>`.
 Record the timer id, owner session and cancellation mechanism. Do not assume Claude's `loop` exists
 under omp. An already configured external scheduler may be used only with an identity guard that
-checks the recorded orchestrator session and run before prompting its pane; a pane id alone is not
-identity. Never install a system cron or background daemon implicitly. If no supported timer exists,
-record `timer_status: unavailable`, report manual supervision and the exact resume command; never
+checks the recorded orchestrator session and run before prompting its terminal; a terminal id alone
+is not identity. Never install a system cron or background daemon implicitly. If no supported timer
+exists, record `timer_status: unavailable`, report manual supervision and the exact resume command; never
 claim a recurring loop was armed. See `docs/orchestrators.md` for host-specific capabilities.
+
+On `hc`, lane terminals are children of this terminal: their status transitions arrive as notes here
+automatically, and `hc wait --children` or `hc events --children-of <self>` can observe the whole
+fleet. Neither replaces the sweep timer — a blocking wait inside one turn holds the session hostage —
+they are extra signal on top of the §5b notify-back, which still carries the actionable text.
 
 The timer is the **fallback** for a finished lane — that announces itself through the §5b
 notify-back — but it is the **only** thing that recovers everything which arrives silently: stalls,
-blocked panes, hot lanes needing compaction, a lane that stopped mid-work and needs the next nudge,
+blocked terminals, hot lanes needing compaction, a lane that stopped mid-work and needs the next nudge,
 a rate limit that parked the agent, and any notify-back that was rejected while this session was
 blocked. That is what keeps 5 minutes load-bearing. **The less autonomous the agent, the more the
 timer *is* the engine** — the driver's §6c says which regime it is in.
 
 Report whether scheduling actually succeeded and how to stop that specific timer. Each tick is one
 idempotent sweep. On resume, re-arm only when nonterminal lanes remain, no valid timer exists and
---no-loop is absent. Re-record the current orchestrator identity and pane, and rewrite unfinished
-lanes' TASK.md notify-back targets to that identity's pane before continuing them. Never leave
-finished lanes ringing a recycled old pane. A missing timer stays an explicit limitation.
+--no-loop is absent. Re-record the current orchestrator identity and terminal, and rewrite unfinished
+lanes' TASK.md notify-back targets to that identity's terminal before continuing them. Never leave
+finished lanes ringing a recycled old terminal. A missing timer stays an explicit limitation.
 
 `--no-loop` disarms only the timer; the briefs still carry the notify-back, but that signal alone is
 lossy — a ring landing while this session is blocked (an open `AskUserQuestion`, a permission
-prompt) is rejected as `agent_blocked` and never retried (§5b) — so when the user passed
+prompt) is rejected as `agent_blocked` on herdr and never retried (§5b) — so when the user passed
 `--no-loop`, tell them in Chinese that a missed ring is recovered only by re-running this skill with
 `--resume` by hand, and that a lane which stops mid-work stays stopped until such a sweep nudges it.
 
@@ -296,7 +306,8 @@ which PRs the run reviewed, fixed and merged itself (§6j), and which it deliber
 `--no-automerge`, `--draft`, escalated after 3 review rounds, or blocked on red checks — with the
 reason for each. For every lane left unmerged, print — do not run — the follow-up commands:
 
-    herdr worktree remove --workspace <ws>             # destroys the checkout AND kills its agent process
+    herdr: herdr worktree remove --workspace <ws>      # destroys the checkout AND kills its agent process
+    hc:    hc kill <t>; git -C <repo> worktree remove <checkout>; hc rm <t>
     gh pr merge <pr-number> --squash --delete-branch   # per lane, after you have reviewed it
     git -C <repo> branch -d <branch>                   # only if the branch outlived the PR merge;
                                                      # a squash-merged branch needs -D — see §8.1
@@ -305,7 +316,8 @@ The block is in that order on purpose: `worktree remove` runs **before** `gh pr 
 --delete-branch`, because git refuses to delete a local branch that is still checked out in a
 worktree, and the merge command will report a partial success. Warn that `worktree remove` discards
 uncommitted work in that checkout, and remember each lane may have **two** workspace ids to clean up
-(§4). Only when the run used `--draft`, print `gh pr ready <pr-number>` ahead of the merge command:
+on herdr (§4); on hc it is one terminal plus the worktree path. Only when the run used `--draft`,
+print `gh pr ready <pr-number>` ahead of the merge command:
 GitHub refuses to merge a draft outright (`Pull request is not mergeable: it is in draft state`).
 
 ## §8.1 Post-merge cleanup — offer it, don't leave it to memory
@@ -327,8 +339,10 @@ saw the lane as `published`.
 
 1. `herdr worktree remove --workspace <ws>` per lane workspace recorded in the state file (both ids
    when §4 created two) — this also closes the workspace and deletes the lane's installed
-   dependencies and in-checkout build artifacts. If a recorded workspace id no longer resolves, the
-   workspace was closed out-of-band; finish the job by path instead:
+   dependencies and in-checkout build artifacts. On `hc`: `hc kill <t>` for the lane's recorded
+   terminal (skip if already finished), then `git -C <repo> worktree remove <checkout>`, then
+   `hc rm <t>` — there are no workspace ids. If a recorded workspace id or terminal no longer
+   resolves, it was closed out-of-band; finish the job by path instead:
    `git -C <repo> worktree remove <checkout_path>` when the directory still exists, then
    `git -C <repo> worktree prune` to drop the stale registration when it does not.
 2. Branch deletion needs a merge check, not ancestry. §8 merges with `--squash`, and a squash-merged
@@ -341,10 +355,10 @@ saw the lane as `published`.
      `git -C <repo> branch -D <branch>` is safe.
    - no merged PR, but `git merge-base --is-ancestor <branch> origin/<base>` → `branch -d`.
    - neither → the branch still holds work nobody merged: keep it, and say why in the report.
-3. Clean only workspaces and parent directories recorded as created by this run. If a recorded
-   workspace outlived its checkout, confirm its current identity and missing path before closing it.
-   Never close unrelated workspaces discovered by a global scan. Remove a recorded parent directory
-   only when it is empty and owned by this run.
+3. Clean only workspaces/terminals and parent directories recorded as created by this run. If a
+   recorded workspace or terminal outlived its checkout, confirm its current identity and missing
+   path before closing it. Never close unrelated workspaces or terminals discovered by a global
+   scan. Remove a recorded parent directory only when it is empty and owned by this run.
 4. Verify with `git -C <repo> worktree list` that only worktrees belonging to other runs remain, and
    report the disk freed (`du -sh` before/after is one line each).
 

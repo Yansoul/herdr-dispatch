@@ -1,15 +1,15 @@
 # Dispatch — §2 to §5b (agent-independent)
 
 Shared by every `dispatch-*` skill in this plugin. Nothing here depends on which coding agent runs
-the lanes: it covers the run's bookkeeping (§2), the lane plan the orchestrator records (§3), the herdr
-workspaces (§4), and the brief written into each lane's checkout (§5b).
+the lanes: it covers the run's bookkeeping (§2), the lane plan the orchestrator records (§3), the lane
+worktrees and terminals (§4), and the brief written into each lane's checkout (§5b).
 
 Runtime preflight (§5a) and launch (§5c) live in `references/driver.md`. Shared invariants and
 parsing (§0–§1) live in `references/entry.md`, model selection in `references/routing.md`, and
 verification/publication (§6–§8) in `references/supervise.md`. Section numbers are shared.
 
 Throughout, **the agent** means omp, and **the driver** is the shared `references/driver.md`.
-The selected preset chooses a magpie route, never a different executable.
+The selected preset chooses a model; magpie owns supplier routing. Every lane runs omp.
 
 ---
 
@@ -31,19 +31,22 @@ whether to resume, archive, or abort.
 
 Record `schema_version: 2`, `skill`, `agent_kind: "omp"`, `flags`, `repo`, `base`, the selected
 magpie `model`, `thinking`, and per-lane routing fields specified in `references/driver.md`.
-Record `orchestrator_pane` from `$HERDR_PANE_ID` (always set when the §1 gate passed). Lanes notify
-completion by prompting this pane (§5b), and each brief needs the id verbatim — never leave a lane
-to find its orchestrator with `herdr agent list`. The id stays valid until the pane closes or is
-moved to another workspace (a move re-qualifies it), and it never proves *who* is inside: if this
+Record `orchestrator_pane` from `$HERDR_PANE_ID` on `herdr` or `$HC_TERMINAL_ID` on `hc` (§1 decides
+which; the field name is historical and holds either terminal id). Lanes notify completion by
+prompting this terminal (§5b), and each brief needs the id verbatim — never leave a lane
+to find its orchestrator with `herdr agent list` / `hc ls`. On `herdr` the id stays valid until the
+pane closes or is moved to another workspace (a move re-qualifies it); on `hc` it stays valid while
+the terminal lives, and lanes launched with `--outlive-parent` keep running after this session's
+process ends. Either way the id never proves *who* is inside: if this
 session ends, the §7 timer dies with it, later rings error out — or land as unsolicited text in
-whatever session occupies the pane by then — and the run comes back only when a human re-runs this
+whatever session occupies the terminal by then — and the run comes back only when a human re-runs this
 skill with `--resume`; that resumed sweep re-arms the loop and re-records `orchestrator_pane` (§7),
-restoring supervision, though briefs already written keep ringing the old pane — the timer covers
+restoring supervision, though briefs already written keep ringing the old terminal — the timer covers
 what those rings miss. Within a live session, the §7 timer is the backstop for every ring that
 misses.
 
 **Publishing preflight.** A lane finishes with *you* pushing its branch and opening its PR (§6f),
-so settle *now* — before a single workspace exists — whether that will be possible, and record
+so settle *now* — before a single lane worktree exists — whether that will be possible, and record
 each answer in the state file:
 
 - does `origin` exist (`git -C <repo> remote get-url origin`);
@@ -78,7 +81,7 @@ quality takes priority over concurrency; maximize independent work within that c
   files or coordinating intermediate work with another lane. Different files alone do not prove
   independence; belonging to the same module alone does not require a single lane.
 - Do not introduce new dependencies, cross-lane handoffs, or shared implementation scaffolding
-  merely to increase pane count. If independence is uncertain, investigate before splitting or keep
+  merely to increase terminal count. If independence is uncertain, investigate before splitting or keep
   the work in one lane. Inside a lane, tasks remain an ordered checklist.
 - The top-level dispatch session defines acceptance criteria and owns final acceptance (§6e).
   Lanes implement and self-check; they do not accept their own or another lane's results.
@@ -96,10 +99,12 @@ Per lane derive:
   the run: two similar tasks get distinguishing words (`fix-login-web`, `fix-login-mobile`), never
   the same slug twice — the branch below drops `<n>`, so two lanes sharing a type and issue would
   produce the same branch name.
-- `name` — `<slug>-<n>` with `<n>` the lane number, e.g. `add-owner-filter-1`. herdr requires
-  `[a-z][a-z0-9_-]{0,31}`; shorten an overlong slug by dropping whole words from the end — still
+- `name` — `<slug>-<n>` with `<n>` the lane number, e.g. `add-owner-filter-1`. Keep it letter-leading
+  and ≤32 chars: herdr requires `[a-z][a-z0-9_-]{0,31}`, hc accepts `1-32 of a-z 0-9 - _`, and the
+  herdr form satisfies both. Shorten an overlong slug by dropping whole words from the end — still
   letter-leading, no trailing hyphen — until the name fits 32 chars. Names carry no run id and are
-  released only when an agent exits, so check `herdr agent list` and `herdr workspace list` before
+  released only when an agent exits, so check `herdr agent list` and `herdr workspace list`, or
+  `hc ls` on `hc`, before
   dispatch; on a collision, shorten further and append the run id's *last* three characters
   (`<slug>-<n>-<xyz>`, still within 32 — the tail of a timestamp-derived id is its fast-moving end,
   the head barely changes between same-day runs), and re-check until the name is actually free.
@@ -157,8 +162,8 @@ sees all of them before anything is created:
   `无 origin，只能本地提交`). Never promise a PR the preflight says you cannot open.
 
 Present this concrete plan as an informational update, then proceed directly to §4. The dispatch
-request authorizes routine lane grouping and creation of the task's worktrees, workspaces and panes;
-never ask the user to confirm the lane table, pane allocation, or permission to start them. Choose
+request authorizes routine lane grouping and creation of the task's worktrees and terminals;
+never ask the user to confirm the lane table, terminal allocation, or permission to start them. Choose
 routine implementation details from repository conventions. Ask once with the host's question tool
 (or plain text) only when unresolved scope or a material choice requires the user's decision; do not
 turn that question into a blanket confirmation of the allocation. Record the plan and acceptance
@@ -167,11 +172,11 @@ the change before dispatch. An explicit request to review the plan before execut
 
 ---
 
-## §4 One workspace per lane
+## §4 One worktree (and terminal) per lane
 
-**`herdr worktree create --cwd <repo>` creates TWO workspaces**, not one: the linked worktree *and* a
-workspace for the base repo itself. So snapshot ids before and after and record every new one, or
-cleanup will leak:
+**On `herdr`, `herdr worktree create --cwd <repo>` creates TWO workspaces**, not one: the linked
+worktree *and* a workspace for the base repo itself. So snapshot ids before and after and record
+every new one, or cleanup will leak:
 
     herdr workspace list | jq -r '.result.workspaces[].workspace_id'   # before
     herdr worktree create --cwd <repo> --branch <branch> --base <base> --label <lane> --no-focus
@@ -179,13 +184,24 @@ cleanup will leak:
 
 `herdr workspace create --cwd <cwd>` is **not** an alternative here — it would point a lane at an
 existing checkout, which §1 forbids. `worktree create` is the only way a lane is born. Nor is the
-agent's *own* worktree feature (some of these CLIs have one): a lane must live in the worktree herdr
-created and recorded, because that path is what §6e verifies and §6f pushes. The driver says so
+agent's *own* worktree feature (some of these CLIs have one): a lane must live in the worktree this
+run created and recorded, because that path is what §6e verifies and §6f pushes. The driver says so
 explicitly where its agent offers one.
 
 Read ids from the JSON, never guess — workspace ids are opaque handles like `w4B`, not `w1`:
 `.result.workspace.workspace_id`, `.result.root_pane.pane_id`, `.result.worktree.path` (the lane's
 checkout).
+
+**On `hc` there is no workspace entity.** A lane is a recorded git worktree plus one hc terminal
+created at §5c — no shell pane exists beforehand, and preflight runs through `hc exec` (driver §5a):
+
+    git -C <repo> worktree list --porcelain                        # before
+    git -C <repo> worktree add <checkout> -b <branch> <base>
+    git -C <repo> worktree list --porcelain                        # after — record the new path
+
+Record the checkout path and the lane `name`; the terminal id and its `dispatch.*` labels are
+recorded when §5c creates it. `hc` needs no id snapshotting beyond that — there are no workspace
+ids to leak, and cleanup is the recorded terminal plus the recorded worktree path (§8.1).
 
 If a create fails because the name, label or worktree path is already taken — a §3 collision
 surfacing at claim time, or a stale checkout directory neither list could show — rename per §3's
@@ -197,7 +213,7 @@ Append each lane to the state file as it is created so a crash mid-fan-out is re
 
 ## §5b Write the brief into the lane's own checkout
 
-(§5a pre-flights the pane and §5c launches the agent — both in the driver. Write the brief between
+(§5a pre-flights the terminal and §5c launches the agent — both in the driver. Write the brief between
 them: the file must exist before the agent is primed.)
 
 `<checkout>/.dispatch/TASK.md`, kept out of git:
@@ -252,18 +268,24 @@ re-nudges (§6c `idle_incomplete`) it is the only thing that tells the next nudg
 the driver may strengthen this paragraph — never weaken it.
 
 Then the notify-back, so a finished lane rings the orchestrator instead of sitting undiscovered
-until the next §7 tick. Write it into the brief with `<orch-pane>` (the §2 `orchestrator_pane`),
-`<run-id>`, `<lane>` and `<skill>` already substituted — the lane runs it verbatim:
+until the next §7 tick. Write it into the brief with `<orch-terminal>` (the §2 `orchestrator_pane`),
+`<run-id>`, `<lane>` and `<skill>` already substituted, using the line for this run's `mux` — the
+lane runs it verbatim:
 
 > **Completion notify-back.** Immediately after writing `.dispatch/DONE`, run this exact command
 > once:
 >
->     herdr agent prompt <orch-pane> "[<skill> <run-id>] lane <lane> wrote DONE — run one <skill> --resume --run <run-id> sweep now."
+>     herdr: herdr agent prompt <orch-terminal> "[<skill> <run-id>] lane <lane> wrote DONE — run one <skill> --resume --run <run-id> sweep now."
+>     hc:    hc send <orch-terminal> "[<skill> <run-id>] lane <lane> wrote DONE — run one <skill> --resume --run <run-id> sweep now."
 >
 > If it errors or is rejected (e.g. `agent_blocked`), do not retry and do not investigate — the
 > orchestrator also polls on a timer and will find `.dispatch/DONE` regardless. This is the only
-> herdr command in your job: it targets only the pane named here, and you never read, prompt, or
-> send keys to any other pane or agent.
+> multiplexer command in your job: it targets only the terminal named here, and you never read,
+> prompt, or send keys to any other terminal or agent.
+
+On `hc` a lane terminal's own status transitions also reach the orchestrator automatically — hc
+types a note into the parent terminal when a child finishes, blocks, errors or exits. The explicit
+send above still runs: its text carries the resume instruction, which a bare status note does not.
 
 (The herdr skill warns against asking for file output in an initial prompt. That guidance is about
 *retrieving long answers*; here the files are a state protocol that must survive compaction.)
