@@ -239,7 +239,10 @@ merge recipe, normally squash merge with remote branch deletion, and record the 
 never marked ready automatically.
 
 After the run merges a lane, immediately perform the scoped cleanup in
-[supervise.md §8.1](skills/_shared/supervise.md): remove its recorded worktree and workspaces/terminal,
+[supervise.md §8.1](skills/_shared/supervise.md): first stop what the lane left running on the machine
+(dev servers and workers found by the lane's checkout path with the list-first tool in §8.2, containers
+found by the `dispatch.run` label; nothing is ever killed by name pattern and Docker Desktop is never
+stopped), then remove its recorded worktree and workspaces/terminal,
 delete the eligible local branch, close its dead workspaces, and remove its empty worktree parent.
 Worktrees come before branch deletion. A branch with a confirmed merged PR may need `branch -D`
 after squash merge; without a merged PR, use `branch -d` only when ancestry proves it merged, and

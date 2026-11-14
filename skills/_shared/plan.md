@@ -267,6 +267,23 @@ Then the load-bearing part:
 re-nudges (§6c `idle_incomplete`) it is the only thing that tells the next nudge where to resume, so
 the driver may strengthen this paragraph — never weaken it.
 
+Then the lane's local resources, with `<run-id>` and `<lane>` substituted the same way as in the
+notify-back. A lane runs in yolo mode and routinely starts dev servers, workers and containers; the
+orchestrator can only clean up what it can find, so the brief makes them findable and makes the lane
+stop them:
+
+> **Local resources.** Everything you start, you stop before you write `.dispatch/DONE`. Start dev
+> servers, watchers and databases from this checkout only, and never leave one running in the
+> background once the command that needed it is finished (no bare `nohup`, `disown` or trailing `&`
+> without a matching stop). Every container you create carries
+> `--label dispatch.run=<run-id> --label dispatch.lane=<lane>` and is named
+> `dispatch-<run-id>-<lane>-<purpose>`; a compose project is named `dispatch-<run-id>-<lane>`.
+> For each long-lived thing, append one line to `.dispatch/resources.md` when you start it
+> (`pid=…`, `port=…`, `container=…`, or a temporary directory outside the checkout such as a
+> release copy under `/tmp`), and delete that line when you stop it. Do not touch containers, ports or
+> processes you did not start, and never stop Docker Desktop or any system-wide database. If
+> something cannot be stopped, say so in `progress.md` instead of leaving it silently.
+
 Then the notify-back, so a finished lane rings the orchestrator instead of sitting undiscovered
 until the next §7 tick. Write it into the brief with `<orch-terminal>` (the §2 `orchestrator_pane`),
 `<run-id>`, `<lane>` and `<skill>` already substituted, using the line for this run's `mux` — the

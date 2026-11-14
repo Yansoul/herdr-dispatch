@@ -100,6 +100,13 @@ result on its merits — but it must surface in the PR body (§6f) and the §8 r
 If a lane claims done but fails any of these, send a corrective prompt and keep it open. Never
 report a half-finished lane as complete.
 
+**Whatever you start to run the criteria, you stop.** A dev server, a browser, a throwaway database
+container started for this check is yours, not the lane's. Start it from the lane's checkout, give a
+container `--label dispatch.run=<run-id> --label dispatch.lane=orchestrator` and a
+`dispatch-<run-id>-orchestrator-<purpose>` name, and stop it as soon as the check is done — do not
+leave it for §8.1. Record anything still running at the end of a sweep in the state file under
+`orchestrator_resources` (`pid` / `port` / `container`), so a crashed session can still be cleaned up.
+
 **Commit granularity is a report line, not a gate.** Compare the commit count against the checklist
 length; a multi-item lane that produced a single commit ignored §5b's policy. Record it and surface it
 in §8, but do **not** hold the lane back and never ask the agent to rewrite history to fix it —
@@ -226,8 +233,8 @@ the user's call, not yours.
 
 **4. A merged lane's residue is pure cost — clean it on the spot.** The §8.1 offer exists for PRs
 the *user* merged; when the run merged the PR itself, that question is already answered. Run §8.1
-steps 1–3 for the lane right away — worktree, dead workspaces, `-D` on the squash-merged branch,
-empty parent dir — and report the freed disk in §8.
+steps 0–3 for the lane right away — leftover processes and containers first, then worktree, dead
+workspaces, `-D` on the squash-merged branch, empty parent dir — and report the freed disk in §8.
 
 ---
 
@@ -306,6 +313,7 @@ which PRs the run reviewed, fixed and merged itself (§6j), and which it deliber
 `--no-automerge`, `--draft`, escalated after 3 review rounds, or blocked on red checks — with the
 reason for each. For every lane left unmerged, print — do not run — the follow-up commands:
 
+    python3 -I <run-dir>/lane_sweep.py <checkout>      # LIST what the lane left running (§8.2); add --kill after reading it
     herdr: herdr worktree remove --workspace <ws>      # destroys the checkout AND kills its agent process
     hc:    hc kill <t>; git -C <repo> worktree remove <checkout>; hc rm <t>
     gh pr merge <pr-number> --squash --delete-branch   # per lane, after you have reviewed it
@@ -337,6 +345,27 @@ yourself rather than printing commands again. The signal can arrive after the lo
 Check `gh pr view <pr> --json state` for the live merge state — never trust a state file that last
 saw the lane as `published`.
 
+0. **Stop what the lane left running — before its worktree goes.** Closing a terminal and removing a
+   checkout do not stop what was started inside it: `next dev` → `next-server`, `wrangler dev` →
+   `workerd`, watchers and test runners outlive their terminal, are re-parented to PID 1, and once the
+   directory is deleted nothing can find them by path any more. Docker containers are not tied to a
+   terminal at all. Per lane, in this order:
+   - **Processes.** Write the §8.2 tool to `<run-dir>/lane_sweep.py` once, then run
+     `python3 -I <run-dir>/lane_sweep.py <checkout_path>` and **read the list**. Only if every line is
+     plausibly this lane's, run it again with `--kill`. It works after the directory is deleted.
+   - **Containers.** `docker ps -aq --filter label=dispatch.run=<run-id> --filter label=dispatch.lane=<lane>`
+     then `docker rm -f` those ids; for a compose project `dispatch-<run-id>-<lane>` use
+     `docker compose -p dispatch-<run-id>-<lane> down -v`; remove leftover volumes the same way with
+     `docker volume ls --filter label=…`. If the Docker daemon is unreachable, skip and say so.
+   - **Recorded extras.** Walk the lane's `.dispatch/resources.md` and the state file's
+     `orchestrator_resources` (§5b, §6e): for each recorded pid/port/container, confirm it still
+     belongs to this lane, then stop it. A recorded temporary directory outside the checkout (a
+     release or build copy under `/tmp`) is removed only if its path contains this run id or lane name.
+   - **Never**, on any of this: kill by name pattern (`pkill node`, `pkill -f next`), loop over a
+     `ps`/`lsof` result you have not printed first, run `docker system|container|volume prune`, stop
+     Docker Desktop, Postgres.app, or any service not labeled or recorded for this run. Those are
+     shared with the user's other work. If the tool prints `refusing:` or a list you did not expect,
+     stop and report; do not widen the match to make it "work".
 1. `herdr worktree remove --workspace <ws>` per lane workspace recorded in the state file (both ids
    when §4 created two) — this also closes the workspace and deletes the lane's installed
    dependencies and in-checkout build artifacts. On `hc`: `hc kill <t>` for the lane's recorded
@@ -360,7 +389,10 @@ saw the lane as `published`.
    path before closing it. Never close unrelated workspaces or terminals discovered by a global
    scan. Remove a recorded parent directory only when it is empty and owned by this run.
 4. Verify with `git -C <repo> worktree list` that only worktrees belonging to other runs remain, and
-   report the disk freed (`du -sh` before/after is one line each).
+   report the disk freed (`du -sh` before/after is one line each). Then run the residue check: the
+   §8.2 tool in list mode for each cleaned checkout path, and
+   `docker ps -a --filter label=dispatch.run=<run-id>`. Both must be empty; anything left goes into
+   the §8 report by name, never silently.
 
 Keep, never delete: the run's state directory (`~/.claude/<skill-name>/<run-id>/` — the audit trail
 of what was verified and pushed, and tiny) and any shared caches (Xcode DerivedData, pnpm store) that
@@ -370,5 +402,134 @@ record of *why* a lane decided what it did, so default to a grace period — off
 days after merge if no regression has surfaced, not immediately. If the user wants them gone now, they
 go now.
 
-Cleanup order still matters: worktrees first, branches second, for the same reason as the block
-above.
+Cleanup order still matters: leftover processes and containers first (they are found by the
+checkout path, which the next step deletes), worktrees second, branches third, for the same reason as
+the block above.
+
+## §8.2 The lane sweep tool
+
+Write this file verbatim to `<run-dir>/lane_sweep.py` the first time §8.1 step 0 or the §8 follow-up
+block needs it; do not rewrite it from memory, and do not replace it with a `ps | grep | kill`
+one-liner. It **lists by default and only stops anything with `--kill`**. A process belongs to the
+lane when its working directory is the checkout (or inside it) or its command line contains
+`<checkout>/`. It refuses an empty, `/`, home-level or shallow path, refuses any result of more than
+40 processes (that means the match is wrong, not that the lane is big), and never targets its own
+ancestors, so the session that runs it cannot be killed by it. `/tmp` and `/private/tmp` are treated
+as the same place.
+
+```python
+#!/usr/bin/env python3
+"""List (default) or stop processes that belong to one dispatch lane checkout.
+
+usage: python3 -I lane_sweep.py <checkout-path> [--kill]
+
+A process belongs to the lane when its cwd is the checkout (or inside it), or its
+command line contains "<checkout>/". Works when the checkout directory is already
+deleted. Prints the list first and stops there unless --kill is given.
+"""
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+
+MAX_MATCHES = 40  # more than this means the pattern is wrong, not that a lane is huge
+MIN_DEPTH = 4     # /Users/<u>/<x>/<y> at least; refuses "/", "~", "/Users/<u>"
+
+
+def run(*cmd):
+    return subprocess.run(cmd, capture_output=True, text=True, check=False).stdout
+
+
+def canonical(path):
+    path = os.path.abspath(os.path.expanduser(path))
+    head = path
+    tail = []
+    while head and not os.path.exists(head) and head != os.sep:
+        head, leaf = os.path.split(head)
+        tail.insert(0, leaf)
+    real = os.path.realpath(head) if head else os.sep
+    return os.path.join(real, *tail) if tail else real
+
+
+def variants(path):
+    out = {path}
+    if path.startswith("/private/"):
+        out.add(path[len("/private"):])
+    elif path.startswith(("/tmp/", "/var/", "/etc/")):
+        out.add("/private" + path)
+    return out
+
+
+def inside(candidate, roots):
+    return any(candidate == r or candidate.startswith(r + "/") for r in roots)
+
+
+def ancestors():
+    mine = {os.getpid()}
+    pid = os.getppid()
+    while pid > 1:
+        mine.add(pid)
+        out = run("ps", "-o", "ppid=", "-p", str(pid)).strip()
+        pid = int(out) if out.isdigit() else 0
+    return mine
+
+
+def matches(roots, skip):
+    found = {}
+    uid = os.getuid()
+    cwd_pid = None
+    for line in run("lsof", "-a", "-d", "cwd", "-u", str(uid), "-Fpn").splitlines():
+        if line.startswith("p"):
+            cwd_pid = int(line[1:])
+        elif line.startswith("n") and cwd_pid and inside(line[1:], roots):
+            found[cwd_pid] = "cwd"
+    for line in run("ps", "-U", str(uid), "-o", "pid=,command=").splitlines():
+        m = re.match(r"\s*(\d+)\s+(.*)", line)
+        if m and any(r + "/" in m.group(2) for r in roots):
+            found.setdefault(int(m.group(1)), "cmdline")
+    return {p: why for p, why in found.items() if p > 1 and p not in skip}
+
+
+def describe(pid):
+    return run("ps", "-o", "pid=,ppid=,etime=,command=", "-p", str(pid)).strip()[:170]
+
+
+def main():
+    args = [a for a in sys.argv[1:] if a != "--kill"]
+    kill = "--kill" in sys.argv[1:]
+    if len(args) != 1 or not args[0].strip():
+        sys.exit("refusing: need exactly one non-empty checkout path")
+    root = canonical(args[0])
+    if root.count("/") < MIN_DEPTH or root in (os.path.expanduser("~"), os.sep):
+        sys.exit(f"refusing: '{root}' is too broad to be a lane checkout")
+    roots = variants(root)
+    skip = ancestors()
+    hits = matches(roots, skip)
+    print(f"checkout: {root}   matches: {len(hits)}")
+    for pid in sorted(hits):
+        print(f"  {hits[pid]:7} {describe(pid)}")
+    if len(hits) > MAX_MATCHES:
+        sys.exit(f"refusing: {len(hits)} matches exceeds {MAX_MATCHES}; the pattern is wrong")
+    if not kill or not hits:
+        return
+    for pid in hits:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    time.sleep(2)
+    left = matches(roots, skip)
+    for pid in left:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    time.sleep(1)
+    print(f"stopped: {len(hits)}   survivors: {sorted(matches(roots, skip))}")
+
+
+if __name__ == "__main__":
+    main()
+```
