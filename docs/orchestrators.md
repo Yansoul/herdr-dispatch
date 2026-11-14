@@ -184,9 +184,13 @@ renewed verification and review. Record the review rounds, findings, and merge S
 review and merge. Draft PRs are never marked ready automatically. For lanes left unmerged, print
 the follow-up commands, including `gh pr ready` for draft runs, instead of executing them.
 
-When the run merges a lane, immediately execute the scoped post-merge cleanup in §8.1: stop the
-lane's leftover processes (list first, §8.2) and its `dispatch.run`-labeled containers, then remove the
-recorded worktree and its workspaces, delete the eligible branch, close the run's dead workspaces,
+After each test/check and on terminal outcomes (including failed, paused, and `--no-automerge`),
+clean no-longer-needed runtime resources under §8.2 independently of git cleanup. Require launch
+records and current identity checks; path scans only discover candidates. Preserve active work and
+shared resources, and retain stopped records in the run ledger outside the checkout.
+When the run merges a lane, immediately execute the scoped post-merge cleanup in §8.1: check
+runtime resources under §8.2, then remove the recorded worktree and its workspaces, delete the
+eligible branch, close the run's dead workspaces,
 and remove its empty worktree parent. Remove worktrees before deleting branches. A confirmed
 merged PR permits `branch -D` after squash merge; otherwise require ancestry for `branch -d`, or
 keep the branch and report why. If a workspace ID is missing, use the recorded checkout path and

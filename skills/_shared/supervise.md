@@ -100,12 +100,12 @@ result on its merits — but it must surface in the PR body (§6f) and the §8 r
 If a lane claims done but fails any of these, send a corrective prompt and keep it open. Never
 report a half-finished lane as complete.
 
-**Whatever you start to run the criteria, you stop.** A dev server, a browser, a throwaway database
-container started for this check is yours, not the lane's. Start it from the lane's checkout, give a
-container `--label dispatch.run=<run-id> --label dispatch.lane=orchestrator` and a
-`dispatch-<run-id>-orchestrator-<purpose>` name, and stop it as soon as the check is done — do not
-leave it for §8.1. Record anything still running at the end of a sweep in the state file under
-`orchestrator_resources` (`pid` / `port` / `container`), so a crashed session can still be cleaned up.
+**Clean up each check's runtime resources when it ends, including on failure.** Record anything
+you launch at creation time in `<run-dir>/resources/orchestrator.json`, outside the checkout, and
+record that ledger path in state under `orchestrator_resources`. Use `dispatch.lane=orchestrator`
+and the current run id, while recording which lane/check needs each resource. Apply §8.2 ownership
+and identity checks before stopping anything; preserve resources still needed by active work.
+Retain stopped records and report unresolved resources. Do not defer runtime cleanup until merge.
 
 **Commit granularity is a report line, not a gate.** Compare the commit count against the checklist
 length; a multi-item lane that produced a single commit ignored §5b's policy. Record it and surface it
@@ -286,6 +286,11 @@ prompt) is rejected as `agent_blocked` on herdr and never retried (§5b) — so 
 `--no-loop`, tell them in Chinese that a missed ring is recovered only by re-running this skill with
 `--resume` by hand, and that a lane which stops mid-work stays stopped until such a sweep nudges it.
 
+Before closing a sweep for any terminal or awaiting-user lane, apply §8.2 to its no-longer-needed
+runtime resources, including failed, user-paused and `--no-automerge` outcomes. Preserve active
+work and its required resources; leave unmerged worktrees, branches and resumable terminals intact.
+Runtime cleanup does not authorize git or terminal removal.
+
 Stop the loop once every lane is terminal or awaiting-user, and say which lanes wait on what.
 Terminal means `merged`, `failed`, user-paused, `verified` with a recorded reason why §6f could not
 publish it, or `published` when §6j is off the table — `--no-automerge`, `--draft`, `--no-pr`, or a
@@ -313,7 +318,6 @@ which PRs the run reviewed, fixed and merged itself (§6j), and which it deliber
 `--no-automerge`, `--draft`, escalated after 3 review rounds, or blocked on red checks — with the
 reason for each. For every lane left unmerged, print — do not run — the follow-up commands:
 
-    python3 -I <run-dir>/lane_sweep.py <checkout>      # LIST what the lane left running (§8.2); add --kill after reading it
     herdr: herdr worktree remove --workspace <ws>      # destroys the checkout AND kills its agent process
     hc:    hc kill <t>; git -C <repo> worktree remove <checkout>; hc rm <t>
     gh pr merge <pr-number> --squash --delete-branch   # per lane, after you have reviewed it
@@ -345,27 +349,12 @@ yourself rather than printing commands again. The signal can arrive after the lo
 Check `gh pr view <pr> --json state` for the live merge state — never trust a state file that last
 saw the lane as `published`.
 
-0. **Stop what the lane left running — before its worktree goes.** Closing a terminal and removing a
-   checkout do not stop what was started inside it: `next dev` → `next-server`, `wrangler dev` →
-   `workerd`, watchers and test runners outlive their terminal, are re-parented to PID 1, and once the
-   directory is deleted nothing can find them by path any more. Docker containers are not tied to a
-   terminal at all. Per lane, in this order:
-   - **Processes.** Write the §8.2 tool to `<run-dir>/lane_sweep.py` once, then run
-     `python3 -I <run-dir>/lane_sweep.py <checkout_path>` and **read the list**. Only if every line is
-     plausibly this lane's, run it again with `--kill`. It works after the directory is deleted.
-   - **Containers.** `docker ps -aq --filter label=dispatch.run=<run-id> --filter label=dispatch.lane=<lane>`
-     then `docker rm -f` those ids; for a compose project `dispatch-<run-id>-<lane>` use
-     `docker compose -p dispatch-<run-id>-<lane> down -v`; remove leftover volumes the same way with
-     `docker volume ls --filter label=…`. If the Docker daemon is unreachable, skip and say so.
-   - **Recorded extras.** Walk the lane's `.dispatch/resources.md` and the state file's
-     `orchestrator_resources` (§5b, §6e): for each recorded pid/port/container, confirm it still
-     belongs to this lane, then stop it. A recorded temporary directory outside the checkout (a
-     release or build copy under `/tmp`) is removed only if its path contains this run id or lane name.
-   - **Never**, on any of this: kill by name pattern (`pkill node`, `pkill -f next`), loop over a
-     `ps`/`lsof` result you have not printed first, run `docker system|container|volume prune`, stop
-     Docker Desktop, Postgres.app, or any service not labeled or recorded for this run. Those are
-     shared with the user's other work. If the tool prints `refusing:` or a list you did not expect,
-     stop and report; do not widen the match to make it "work".
+0. **Check runtime resources before removing a worktree.** Apply §8.2 to the lane's ledger and
+   relevant orchestrator records outside the checkout. Print/read exact targets and ownership
+   evidence, revalidate identities before every action, and preserve unknown/shared resources.
+   Runtime cleanup also happens after tests and terminal outcomes without removing git work.
+   If active work still needs the checkout or its resources, preserve them and defer worktree and
+   terminal removal. Record unresolved resources and cleanup results in the retained ledger.
 1. `herdr worktree remove --workspace <ws>` per lane workspace recorded in the state file (both ids
    when §4 created two) — this also closes the workspace and deletes the lane's installed
    dependencies and in-checkout build artifacts. On `hc`: `hc kill <t>` for the lane's recorded
@@ -389,10 +378,10 @@ saw the lane as `published`.
    path before closing it. Never close unrelated workspaces or terminals discovered by a global
    scan. Remove a recorded parent directory only when it is empty and owned by this run.
 4. Verify with `git -C <repo> worktree list` that only worktrees belonging to other runs remain, and
-   report the disk freed (`du -sh` before/after is one line each). Then run the residue check: the
-   §8.2 tool in list mode for each cleaned checkout path, and
-   `docker ps -a --filter label=dispatch.run=<run-id>`. Both must be empty; anything left goes into
-   the §8 report by name, never silently.
+   report the disk freed (`du -sh` before/after is one line each). Verify runtime cleanup against
+   the retained ledger under §8.2. Read-only discovery may identify additional candidates but must
+   never trigger deletion. Report remaining resources and whether they are active, shared,
+   unverified or failed cleanup; do not require other active lanes' resources to be absent.
 
 Keep, never delete: the run's state directory (`~/.claude/<skill-name>/<run-id>/` — the audit trail
 of what was verified and pushed, and tiny) and any shared caches (Xcode DerivedData, pnpm store) that
@@ -402,134 +391,58 @@ record of *why* a lane decided what it did, so default to a grace period — off
 days after merge if no regression has surfaced, not immediately. If the user wants them gone now, they
 go now.
 
-Cleanup order still matters: leftover processes and containers first (they are found by the
-checkout path, which the next step deletes), worktrees second, branches third, for the same reason as
-the block above.
+For eligible git cleanup, check runtime resources under §8.2 first, remove worktrees second, and
+delete eligible branches third. Runtime ownership records survive all three steps outside the checkout.
 
-## §8.2 The lane sweep tool
+## §8.2 Runtime cleanup by recorded ownership and identity
 
-Write this file verbatim to `<run-dir>/lane_sweep.py` the first time §8.1 step 0 or the §8 follow-up
-block needs it; do not rewrite it from memory, and do not replace it with a `ps | grep | kill`
-one-liner. It **lists by default and only stops anything with `--kill`**. A process belongs to the
-lane when its working directory is the checkout (or inside it) or its command line contains
-`<checkout>/`. It refuses an empty, `/`, home-level or shallow path, refuses any result of more than
-40 processes (that means the match is wrong, not that the lane is big), and never targets its own
-ancestors, so the session that runs it cannot be killed by it. `/tmp` and `/private/tmp` are treated
-as the same place.
+**When and where.** Clean no-longer-needed runtime resources after every test/check, whether it
+passes or fails, and on terminal outcomes including failed, user-paused, and unmerged
+`--no-automerge`/`--draft`/`--no-pr` lanes. Do this independently of merge and worktree removal.
+Preserve resources still required by active work; record that reason instead of interrupting them.
+Keep each lane's ledger at `<run-dir>/resources/<lane>.json` and the orchestrator's at
+`<run-dir>/resources/orchestrator.json`, outside all checkouts, with paths recorded in state.
+Retain entries with stopped/removed status and time; never erase the ownership history.
 
-```python
-#!/usr/bin/env python3
-"""List (default) or stop processes that belong to one dispatch lane checkout.
+**Discovery is read-only.** Checkout-path, cwd, command-line, name, port and parent-PID scans may
+find candidates to investigate. They never establish ownership or authorize a signal/deletion.
+Print and read the proposed targets and their evidence before acting. Unknown, missing, stale or
+ambiguous evidence means leave the resource untouched and report it; never widen a match.
 
-usage: python3 -I lane_sweep.py <checkout-path> [--kill]
+**Processes.** Record each process at launch with run/lane ownership, purpose, PID, OS start time,
+UID and executable identity. Record descendants at their own launch with the same fields; a later
+process-tree scan or reused PID/port cannot reconstruct ownership. Before SIGTERM, revalidate all
+identity fields against the live process and confirm this run/lane created it and it is no longer
+needed. Exclude the cleanup process, its ancestors, shared services and active work. Signal only
+the exact reviewed identities, never a process group inferred from a PID. After a bounded grace
+period, any SIGKILL escalation requires the same identity checks again and is limited to surviving
+members of that original reviewed set. No new targets may enter during escalation. If the platform
+cannot reliably distinguish the original process from a replacement, do not signal it. Record
+exited, stopped, identity-mismatched and unresolved outcomes accurately.
 
-A process belongs to the lane when its cwd is the checkout (or inside it), or its
-command line contains "<checkout>/". Works when the checkout directory is already
-deleted. Prints the list first and stops there unless --kill is given.
-"""
-import os
-import re
-import signal
-import subprocess
-import sys
-import time
+**Containers, volumes and networks.** At creation, record the exact container/network ID or exact
+volume identifier, Docker context and daemon identity, creation identity, purpose, and both
+`dispatch.run` and `dispatch.lane` labels. Before each stop/removal, inspect in that recorded context
+and verify daemon, exact resource identity, creation record and both labels. Names, Compose project
+names and labels alone do not prove this run created a resource. A missing or replaced resource is
+not permission to operate on its replacement. Print and read each exact proposed target first.
+Stop/remove only verified, no-longer-needed lane-created containers; never use blanket Compose
+volume teardown or Docker prune. Remove a volume/network individually only when its creation and
+identity are verified and it is not shared, pre-existing, attached to or required by active work.
+Preserve shared volumes even when a lane container used them. If the daemon is unreachable or
+ownership cannot be established, leave the resource and report it.
 
-MAX_MATCHES = 40  # more than this means the pattern is wrong, not that a lane is huge
-MIN_DEPTH = 4     # /Users/<u>/<x>/<y> at least; refuses "/", "~", "/Users/<u>"
+**Temporary directories.** Create and record a dedicated canonical temporary root for this run.
+For every directory created beneath it, record the exact canonical path, filesystem identity
+(device/inode and creation identity where available), run/lane owner and creation event. Before
+removal, verify the root and target still have those identities, the target is a strict descendant
+of that root, and it is neither shared nor needed by active work. Do not follow replacement symlinks
+or cross mounted filesystems; if containment or identity cannot be proved, leave it and report it.
+A path containing a run id or lane name is never ownership evidence. Do not remove an outside-root
+path or infer ownership from an old ledger entry alone.
 
-
-def run(*cmd):
-    return subprocess.run(cmd, capture_output=True, text=True, check=False).stdout
-
-
-def canonical(path):
-    path = os.path.abspath(os.path.expanduser(path))
-    head = path
-    tail = []
-    while head and not os.path.exists(head) and head != os.sep:
-        head, leaf = os.path.split(head)
-        tail.insert(0, leaf)
-    real = os.path.realpath(head) if head else os.sep
-    return os.path.join(real, *tail) if tail else real
-
-
-def variants(path):
-    out = {path}
-    if path.startswith("/private/"):
-        out.add(path[len("/private"):])
-    elif path.startswith(("/tmp/", "/var/", "/etc/")):
-        out.add("/private" + path)
-    return out
-
-
-def inside(candidate, roots):
-    return any(candidate == r or candidate.startswith(r + "/") for r in roots)
-
-
-def ancestors():
-    mine = {os.getpid()}
-    pid = os.getppid()
-    while pid > 1:
-        mine.add(pid)
-        out = run("ps", "-o", "ppid=", "-p", str(pid)).strip()
-        pid = int(out) if out.isdigit() else 0
-    return mine
-
-
-def matches(roots, skip):
-    found = {}
-    uid = os.getuid()
-    cwd_pid = None
-    for line in run("lsof", "-a", "-d", "cwd", "-u", str(uid), "-Fpn").splitlines():
-        if line.startswith("p"):
-            cwd_pid = int(line[1:])
-        elif line.startswith("n") and cwd_pid and inside(line[1:], roots):
-            found[cwd_pid] = "cwd"
-    for line in run("ps", "-U", str(uid), "-o", "pid=,command=").splitlines():
-        m = re.match(r"\s*(\d+)\s+(.*)", line)
-        if m and any(r + "/" in m.group(2) for r in roots):
-            found.setdefault(int(m.group(1)), "cmdline")
-    return {p: why for p, why in found.items() if p > 1 and p not in skip}
-
-
-def describe(pid):
-    return run("ps", "-o", "pid=,ppid=,etime=,command=", "-p", str(pid)).strip()[:170]
-
-
-def main():
-    args = [a for a in sys.argv[1:] if a != "--kill"]
-    kill = "--kill" in sys.argv[1:]
-    if len(args) != 1 or not args[0].strip():
-        sys.exit("refusing: need exactly one non-empty checkout path")
-    root = canonical(args[0])
-    if root.count("/") < MIN_DEPTH or root in (os.path.expanduser("~"), os.sep):
-        sys.exit(f"refusing: '{root}' is too broad to be a lane checkout")
-    roots = variants(root)
-    skip = ancestors()
-    hits = matches(roots, skip)
-    print(f"checkout: {root}   matches: {len(hits)}")
-    for pid in sorted(hits):
-        print(f"  {hits[pid]:7} {describe(pid)}")
-    if len(hits) > MAX_MATCHES:
-        sys.exit(f"refusing: {len(hits)} matches exceeds {MAX_MATCHES}; the pattern is wrong")
-    if not kill or not hits:
-        return
-    for pid in hits:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    time.sleep(2)
-    left = matches(roots, skip)
-    for pid in left:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    time.sleep(1)
-    print(f"stopped: {len(hits)}   survivors: {sorted(matches(roots, skip))}")
-
-
-if __name__ == "__main__":
-    main()
-```
+**Verification.** Reinspect only the recorded identities after cleanup and retain the results in
+the ledger. Read-only discovery can reveal additional candidates, but those remain untouched
+unless independently supported by launch/creation records and reviewed under this procedure.
+Report unresolved resources, unavailable identity checks and intentionally preserved active/shared
+resources explicitly. Never stop Docker Desktop, Postgres.app or another system-wide service.
