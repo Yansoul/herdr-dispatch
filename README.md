@@ -238,8 +238,14 @@ merge recipe, normally squash merge with remote branch deletion, and record the 
 `--no-automerge`, `--draft`, and `--no-pr` opt out of this automatic review/merge path; draft PRs are
 never marked ready automatically.
 
+After each test/check, and when a lane becomes terminal (including failed, paused, or
+`--no-automerge`), clean its no-longer-needed runtime resources using the launch records and
+identity checks in [supervise.md §8.2](skills/_shared/supervise.md). Preserve active work and shared
+resources; path scans are read-only discovery, never authority to stop a process. Keep the resource
+ledger outside the checkout and retain stopped records. This cleanup is independent of merging.
 After the run merges a lane, immediately perform the scoped cleanup in
-[supervise.md §8.1](skills/_shared/supervise.md): remove its recorded worktree and workspaces/terminal,
+[supervise.md §8.1](skills/_shared/supervise.md): check runtime resources under §8.2, then remove its
+recorded worktree and workspaces/terminal,
 delete the eligible local branch, close its dead workspaces, and remove its empty worktree parent.
 Worktrees come before branch deletion. A branch with a confirmed merged PR may need `branch -D`
 after squash merge; without a merged PR, use `branch -d` only when ancestry proves it merged, and

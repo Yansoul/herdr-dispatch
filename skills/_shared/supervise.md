@@ -100,6 +100,13 @@ result on its merits — but it must surface in the PR body (§6f) and the §8 r
 If a lane claims done but fails any of these, send a corrective prompt and keep it open. Never
 report a half-finished lane as complete.
 
+**Clean up each check's runtime resources when it ends, including on failure.** Record anything
+you launch at creation time in `<run-dir>/resources/orchestrator.json`, outside the checkout, and
+record that ledger path in state under `orchestrator_resources`. Use `dispatch.lane=orchestrator`
+and the current run id, while recording which lane/check needs each resource. Apply §8.2 ownership
+and identity checks before stopping anything; preserve resources still needed by active work.
+Retain stopped records and report unresolved resources. Do not defer runtime cleanup until merge.
+
 **Commit granularity is a report line, not a gate.** Compare the commit count against the checklist
 length; a multi-item lane that produced a single commit ignored §5b's policy. Record it and surface it
 in §8, but do **not** hold the lane back and never ask the agent to rewrite history to fix it —
@@ -226,8 +233,8 @@ the user's call, not yours.
 
 **4. A merged lane's residue is pure cost — clean it on the spot.** The §8.1 offer exists for PRs
 the *user* merged; when the run merged the PR itself, that question is already answered. Run §8.1
-steps 1–3 for the lane right away — worktree, dead workspaces, `-D` on the squash-merged branch,
-empty parent dir — and report the freed disk in §8.
+steps 0–3 for the lane right away — leftover processes and containers first, then worktree, dead
+workspaces, `-D` on the squash-merged branch, empty parent dir — and report the freed disk in §8.
 
 ---
 
@@ -278,6 +285,11 @@ lossy — a ring landing while this session is blocked (an open `AskUserQuestion
 prompt) is rejected as `agent_blocked` on herdr and never retried (§5b) — so when the user passed
 `--no-loop`, tell them in Chinese that a missed ring is recovered only by re-running this skill with
 `--resume` by hand, and that a lane which stops mid-work stays stopped until such a sweep nudges it.
+
+Before closing a sweep for any terminal or awaiting-user lane, apply §8.2 to its no-longer-needed
+runtime resources, including failed, user-paused and `--no-automerge` outcomes. Preserve active
+work and its required resources; leave unmerged worktrees, branches and resumable terminals intact.
+Runtime cleanup does not authorize git or terminal removal.
 
 Stop the loop once every lane is terminal or awaiting-user, and say which lanes wait on what.
 Terminal means `merged`, `failed`, user-paused, `verified` with a recorded reason why §6f could not
@@ -337,6 +349,12 @@ yourself rather than printing commands again. The signal can arrive after the lo
 Check `gh pr view <pr> --json state` for the live merge state — never trust a state file that last
 saw the lane as `published`.
 
+0. **Check runtime resources before removing a worktree.** Apply §8.2 to the lane's ledger and
+   relevant orchestrator records outside the checkout. Print/read exact targets and ownership
+   evidence, revalidate identities before every action, and preserve unknown/shared resources.
+   Runtime cleanup also happens after tests and terminal outcomes without removing git work.
+   If active work still needs the checkout or its resources, preserve them and defer worktree and
+   terminal removal. Record unresolved resources and cleanup results in the retained ledger.
 1. `herdr worktree remove --workspace <ws>` per lane workspace recorded in the state file (both ids
    when §4 created two) — this also closes the workspace and deletes the lane's installed
    dependencies and in-checkout build artifacts. On `hc`: `hc kill <t>` for the lane's recorded
@@ -360,7 +378,10 @@ saw the lane as `published`.
    path before closing it. Never close unrelated workspaces or terminals discovered by a global
    scan. Remove a recorded parent directory only when it is empty and owned by this run.
 4. Verify with `git -C <repo> worktree list` that only worktrees belonging to other runs remain, and
-   report the disk freed (`du -sh` before/after is one line each).
+   report the disk freed (`du -sh` before/after is one line each). Verify runtime cleanup against
+   the retained ledger under §8.2. Read-only discovery may identify additional candidates but must
+   never trigger deletion. Report remaining resources and whether they are active, shared,
+   unverified or failed cleanup; do not require other active lanes' resources to be absent.
 
 Keep, never delete: the run's state directory (`~/.claude/<skill-name>/<run-id>/` — the audit trail
 of what was verified and pushed, and tiny) and any shared caches (Xcode DerivedData, pnpm store) that
@@ -370,5 +391,58 @@ record of *why* a lane decided what it did, so default to a grace period — off
 days after merge if no regression has surfaced, not immediately. If the user wants them gone now, they
 go now.
 
-Cleanup order still matters: worktrees first, branches second, for the same reason as the block
-above.
+For eligible git cleanup, check runtime resources under §8.2 first, remove worktrees second, and
+delete eligible branches third. Runtime ownership records survive all three steps outside the checkout.
+
+## §8.2 Runtime cleanup by recorded ownership and identity
+
+**When and where.** Clean no-longer-needed runtime resources after every test/check, whether it
+passes or fails, and on terminal outcomes including failed, user-paused, and unmerged
+`--no-automerge`/`--draft`/`--no-pr` lanes. Do this independently of merge and worktree removal.
+Preserve resources still required by active work; record that reason instead of interrupting them.
+Keep each lane's ledger at `<run-dir>/resources/<lane>.json` and the orchestrator's at
+`<run-dir>/resources/orchestrator.json`, outside all checkouts, with paths recorded in state.
+Retain entries with stopped/removed status and time; never erase the ownership history.
+
+**Discovery is read-only.** Checkout-path, cwd, command-line, name, port and parent-PID scans may
+find candidates to investigate. They never establish ownership or authorize a signal/deletion.
+Print and read the proposed targets and their evidence before acting. Unknown, missing, stale or
+ambiguous evidence means leave the resource untouched and report it; never widen a match.
+
+**Processes.** Record each process at launch with run/lane ownership, purpose, PID, OS start time,
+UID and executable identity. Record descendants at their own launch with the same fields; a later
+process-tree scan or reused PID/port cannot reconstruct ownership. Before SIGTERM, revalidate all
+identity fields against the live process and confirm this run/lane created it and it is no longer
+needed. Exclude the cleanup process, its ancestors, shared services and active work. Signal only
+the exact reviewed identities, never a process group inferred from a PID. After a bounded grace
+period, any SIGKILL escalation requires the same identity checks again and is limited to surviving
+members of that original reviewed set. No new targets may enter during escalation. If the platform
+cannot reliably distinguish the original process from a replacement, do not signal it. Record
+exited, stopped, identity-mismatched and unresolved outcomes accurately.
+
+**Containers, volumes and networks.** At creation, record the exact container/network ID or exact
+volume identifier, Docker context and daemon identity, creation identity, purpose, and both
+`dispatch.run` and `dispatch.lane` labels. Before each stop/removal, inspect in that recorded context
+and verify daemon, exact resource identity, creation record and both labels. Names, Compose project
+names and labels alone do not prove this run created a resource. A missing or replaced resource is
+not permission to operate on its replacement. Print and read each exact proposed target first.
+Stop/remove only verified, no-longer-needed lane-created containers; never use blanket Compose
+volume teardown or Docker prune. Remove a volume/network individually only when its creation and
+identity are verified and it is not shared, pre-existing, attached to or required by active work.
+Preserve shared volumes even when a lane container used them. If the daemon is unreachable or
+ownership cannot be established, leave the resource and report it.
+
+**Temporary directories.** Create and record a dedicated canonical temporary root for this run.
+For every directory created beneath it, record the exact canonical path, filesystem identity
+(device/inode and creation identity where available), run/lane owner and creation event. Before
+removal, verify the root and target still have those identities, the target is a strict descendant
+of that root, and it is neither shared nor needed by active work. Do not follow replacement symlinks
+or cross mounted filesystems; if containment or identity cannot be proved, leave it and report it.
+A path containing a run id or lane name is never ownership evidence. Do not remove an outside-root
+path or infer ownership from an old ledger entry alone.
+
+**Verification.** Reinspect only the recorded identities after cleanup and retain the results in
+the ledger. Read-only discovery can reveal additional candidates, but those remain untouched
+unless independently supported by launch/creation records and reviewed under this procedure.
+Report unresolved resources, unavailable identity checks and intentionally preserved active/shared
+resources explicitly. Never stop Docker Desktop, Postgres.app or another system-wide service.

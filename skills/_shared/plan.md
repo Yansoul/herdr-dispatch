@@ -267,6 +267,26 @@ Then the load-bearing part:
 re-nudges (§6c `idle_incomplete`) it is the only thing that tells the next nudge where to resume, so
 the driver may strengthen this paragraph — never weaken it.
 
+Then the lane's local resources, with `<run-dir>`, `<run-id>` and `<lane>` substituted in the brief.
+Give each lane its own ledger at `<run-dir>/resources/<lane>.json`, outside the checkout; keep it
+through worktree deletion and record its path in state. Apply supervise.md §8.2:
+
+> **Local resources.** Stop no-longer-needed resources after each test/check and before
+> `.dispatch/DONE`, including when work fails or pauses. Preserve resources still needed by active
+> work. At launch, record run/lane ownership, purpose, and process PID, start time, UID and executable
+> identity in your assigned ledger. Record descendants when they launch too; never recover ownership
+> from a reused PID, port, parent PID or checkout-path match. If an identity cannot be recorded or
+> verified, leave that resource untouched and report it for follow-up.
+> Record every container, volume and network created by this lane at creation time, with its exact
+> identifier, Docker context/daemon, creation identity and `dispatch.run=<run-id>` plus
+> `dispatch.lane=<lane>` labels. Names and Compose project names are only descriptive, not proof of
+> ownership. Preserve pre-existing/shared resources and volumes. Record temporary directories at
+> creation with their exact canonical paths and filesystem identities, inside a dedicated canonical
+> temporary root created for this run. Never treat a run/lane name substring as proof of ownership.
+> Follow §8.2 identity checks before stopping or deleting anything. Retain each ledger entry with
+> stopped/removed status and time instead of erasing it; record unresolved resources in the ledger
+> and `.dispatch/progress.md`. Never stop Docker Desktop or a system-wide database.
+
 Then the notify-back, so a finished lane rings the orchestrator instead of sitting undiscovered
 until the next §7 tick. Write it into the brief with `<orch-terminal>` (the §2 `orchestrator_pane`),
 `<run-id>`, `<lane>` and `<skill>` already substituted, using the line for this run's `mux` — the
