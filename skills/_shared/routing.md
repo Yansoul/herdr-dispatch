@@ -11,7 +11,7 @@ Skills choose a model identity. Magpie owns supplier selection, account selectio
 | Entry | Requested model | Selection when no exact model is prescribed |
 | --- | --- | --- |
 | dispatch-omp | explicit --model required | none |
-| dispatch-codex | gpt-6-astra | none |
+| dispatch-codex | gpt-6.2-sol | none |
 | dispatch-cursor | claude-opus-5-5@1m | none |
 | dispatch-devin | swe-2 | none |
 | dispatch-grok | grok-4.7@500k | none |
@@ -29,7 +29,7 @@ Resolve in two stages before writing the lane overlay:
 
 `--model` also accepts any exact `magpie/...` chat selector present in the live catalog when the user explicitly supplies it, including a supplier-qualified entry or a managed group. Preserve that explicit request; do not reject a working catalog entry merely because its namespace names a supplier, and do not replace it with a group behind the user's back. Group selection delegates delivery to the group's configured policy, including mixed-model groups when explicitly selected. The skill must never invent a supplier-qualified override from a model name or preset. Do not create/change groups, expose hidden models, subscribe, edit providers, or mutate magpie settings to make dispatch work.
 
-Record the resolved full selector in `model` and use it for every role and child. For example, when the catalog and group metadata expose `magpie/auto/gpt-6-astra`, a request for `gpt-6-astra` uses that group even if individual supplier entries are present. If magpie exposes only one GLM model through one supplier, its selector is a catalog resolution result, never a hard-coded GLM provider preference.
+Record the resolved full selector in `model` and use it for every role and child. For example, when the catalog and group metadata expose `magpie/auto/gpt-6.2-sol`, a request for `gpt-6.2-sol` uses that group even if individual supplier entries are present. If magpie exposes only one GLM model through one supplier, its selector is a catalog resolution result, never a hard-coded GLM provider preference.
 
 Thinking: validate explicit levels against the selected entry's `thinking` list. Treat a null/missing list on a non-reasoning model as no reasoning levels and use `off`; never iterate null or reject that otherwise valid model. Without an override choose `high` if offered, otherwise `medium`, then `low`, then the first advertised level; non-reasoning models use `off`. A reasoning model with missing level metadata needs capability diagnosis rather than an invented level. Record the result rather than inheriting a machine-wide effort. Avoid `auto`, which can invoke an extra judgment model. Record the catalog context window for diagnostics; it does not itself measure live context use.
 

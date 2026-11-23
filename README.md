@@ -69,7 +69,7 @@ Start the orchestrator inside a herdr pane or a herdr-core (`hc`) terminal, in t
 /dispatch-codex Add an owner filter to the repos list; fix the websocket reconnect timeout
 ```
 
-To select a model directly, use `/dispatch-omp --model gpt-6-astra` followed by your task text.
+To select a model directly, use `/dispatch-omp --model gpt-6.2-sol` followed by your task text.
 The skill resolves that model through magpie's live catalog, preferring its existing routing group.
 
 1. Preflight checks the multiplexer backend (herdr or hc), omp, routes, the repository, and
@@ -102,7 +102,7 @@ installed. Plans, questions, and reports are in Chinese; briefs, commits, and PR
 
 | Skill | Model selection (no supplier preference) |
 | --- | --- |
-| `/dispatch-codex` | `gpt-6-astra` |
+| `/dispatch-codex` | `gpt-6.2-sol` |
 | `/dispatch-glm` | Distinct GLM model identities from the live magpie catalog |
 | `/dispatch-mimo` | Distinct MiMo model identities from the live magpie catalog |
 | `/dispatch-deepseek` | `deepseek-v4.1-flash` |
