@@ -8,8 +8,10 @@ Runtime preflight (§5a) and launch (§5c) live in `references/driver.md`. Share
 parsing (§0–§1) live in `references/entry.md`, model selection in `references/routing.md`, and
 verification/publication (§6–§8) in `references/supervise.md`. Section numbers are shared.
 
-Throughout, **the agent** means omp, and **the driver** is the shared `references/driver.md`.
-The selected preset chooses a model; magpie owns supplier routing. Every lane runs omp.
+Throughout, **the agent** means the selected runtime (`omp` by default across all skills, or native
+`codex` when `dispatch-codex` runs in `codex` mode), and **the driver** is that runtime's driver
+(`references/driver.md` for `omp`, `references/codex-driver.md` for native `codex`).
+For `omp` runs, the selected preset chooses a model and magpie owns supplier routing.
 
 ---
 
@@ -29,8 +31,10 @@ running different agents over the same repo never share a state tree. `mkdir -p`
 dir for this repo still holds non-terminal lanes, do not silently start a second one — ask the user
 whether to resume, archive, or abort.
 
-Record `schema_version: 2`, `skill`, `agent_kind: "omp"`, `flags`, `repo`, `base`, the selected
-magpie `model`, `thinking`, and per-lane routing fields specified in `references/driver.md`.
+Record `schema_version: 2`, `skill`, `agent_kind` (`"omp"` or `"codex"`), `flags`, `repo`, `base`,
+and the runtime-specific model/routing fields specified in the active driver (for `omp`, the
+selected magpie `model`, `thinking`, and per-lane routing fields; for native `codex`, optional
+`model` / `thinking` and codex version).
 Record `orchestrator_pane` from `$HERDR_PANE_ID` on `herdr` or `$HC_TERMINAL_ID` on `hc` (§1 decides
 which; the field name is historical and holds either terminal id). Lanes notify completion by
 prompting this terminal (§5b), and each brief needs the id verbatim — never leave a lane

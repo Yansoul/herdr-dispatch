@@ -65,7 +65,7 @@ diagnose — the three cases look alike and only one is yours to act on:
   that recipe; otherwise surface it to the user instead of guessing, because steering someone else's
   thread and abandoning your own look identical from here.
 - the name resolves to nothing → inspect the recorded terminal. Only after it is back at a shell,
-  restore the recorded omp session using the driver's §6h. Do not launch a fresh goal or discard
+  restore the recorded session using the active driver's §6h. Do not launch a fresh goal or discard
   history merely because the process exited.
 
 **Prompt guard — the one sanctioned exception to the no-terminal-reads rule.** Immediately before *any*
@@ -181,8 +181,10 @@ head branch that already has a PR, and a sweep that treats that error as failure
   `.dispatch/progress.md` (that file is git-excluded per §5b, so the reviewer cannot open it — carry
   it over, do not link to it); the acceptance criteria with each one's verified outcome (§6e);
   any recorded deviation from the §3-recorded plan, stated as such; and a provenance line naming
-  the run id, lane, **omp version, requested magpie route, thinking and role routes**, and approval
-  posture. A magpie routing group identifies the requested route, not a guaranteed physical upstream.
+  the run id, lane, runtime and version (for `omp`: **omp version, requested magpie route, thinking
+  and role routes**; for native `codex`: **codex version** and any explicit model/thinking), and
+  approval posture. A magpie routing group identifies the requested route, not a guaranteed physical
+  upstream.
 
 **5. Close the lane.** Record `pr_url` and set the phase to `published`. On failure, record the
 stderr and bump `publish_attempts`; after 3 failed attempts stop retrying, record that as the
@@ -201,14 +203,15 @@ it finds, and the merge. It runs per lane, only ever on PRs this run opened, and
 like §6f — record `review_rounds`, findings, and `merge_sha` in the state file and skip whatever a
 prior sweep already did.
 
-**1. Review with eyes that did not write the code.** Start a fresh independent omp reviewer through
-the same magpie-only overlay and routing preflight as the lane (driver §5a/§5c), in a separate
-recorded terminal/session attached to the lane checkout. Give it a read-only review objective: inspect
-`gh pr diff <pr>`, the recorded acceptance criteria, TASK.md and progress.md; report correctness,
-security and acceptance failures with file, line and severity, or explicitly no findings. It must
-not edit, commit, publish or merge. Record its session and route separately. Never use a host-native
-subagent whose runtime/provider bypasses omp/magpie. The orchestrator's own read is corroboration,
-not the independent review.
+**1. Review with eyes that did not write the code.** Start a fresh independent reviewer using the
+run's runtime in a separate recorded terminal/session attached to the lane checkout (for `omp` runs:
+a fresh `omp` session through the same magpie-only overlay and routing preflight as the lane; for
+native `codex` runs: a fresh `codex` session in that checkout). Give it a read-only review
+objective: inspect `gh pr diff <pr>`, the recorded acceptance criteria, TASK.md and progress.md;
+report correctness, security and acceptance failures with file, line and severity, or explicitly no
+findings. It must not edit, commit, publish or merge. Record its session and route separately. For
+`omp` runs, never use a host-native subagent whose runtime/provider bypasses omp/magpie. The
+orchestrator's own read is corroboration, not the independent review.
 
 **2. Fix what it finds, on the lane's own branch.** Prefer the lane's agent when it is still alive —
 §6d steering applies, and it holds the context that wrote the code. When the agent has exited or the
