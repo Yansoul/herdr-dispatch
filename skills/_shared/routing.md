@@ -11,7 +11,7 @@ Skills choose a model identity. Magpie owns supplier selection, account selectio
 | Entry | Requested model | Selection when no exact model is prescribed |
 | --- | --- | --- |
 | dispatch-omp | explicit --model required | none |
-| dispatch-codex | gpt-6.2-sol | none |
+| dispatch-codex (when running `omp`) | gpt-6.2-sol | none |
 | dispatch-cursor | claude-opus-5-5@1m | none |
 | dispatch-devin | swe-2 | none |
 | dispatch-grok | grok-4.7@500k | none |

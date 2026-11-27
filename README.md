@@ -1,11 +1,15 @@
 # herdr-dispatch
 
-Dispatch coding work into isolated [herdr](https://herdr.dev) worktrees, execute every lane with
-**omp**, and route every model request through the local **magpie** provider.
+Dispatch coding work into isolated [herdr](https://herdr.dev) worktrees, executing lanes with
+**omp** (routed through the local **magpie** provider) — and, for `/dispatch-codex`, supporting
+both native **codex** CLI (preferred default) and **omp**.
 
-The eight existing dispatch names are model presets. They share one runtime and one
-supervision protocol. `/dispatch-omp --model <model-id>` selects a model without a preset.
-Skills choose models; magpie chooses their suppliers, accounts, and failover policy.
+The other dispatch names are `omp` model presets sharing one runtime and supervision protocol, while
+`/dispatch-omp --model <model-id>` selects an `omp` model without a preset. `/dispatch-codex`
+accepts `--runtime codex|omp|auto` (default `auto`: prefers native `codex`, falls back to `omp`
+with `gpt-6.2-sol` if `codex` is unavailable).
+For `omp` runs, skills choose models while magpie chooses their suppliers, accounts, and failover
+policy.
 The orchestrator plans the lanes, checks their acceptance criteria, publishes verified branches,
 and by default carries their PRs through independent review, fixes, merge, and scoped post-merge
 cleanup. Lane agents never push, open PRs, or merge.
@@ -16,8 +20,8 @@ cleanup. Lane agents never push, open PRs, or merge.
 | --- | --- |
 | **herdr or herdr-core** | A classic herdr pane (`HERDR_ENV=1`, `herdr` CLI) or a herdr-core terminal (`HC_TERMINAL_ID`, `hc` CLI). Creates and controls the isolated worktrees and lane terminals. Dispatch refuses to run outside both. |
 | **A git repository** | Run from the main checkout; every lane gets a linked worktree based on a recorded base ref. |
-| **omp** | The only lane runtime. It must be resolvable from each lane terminal's launch environment and support the launch, session, and routing capabilities required by the shared driver. |
-| **Local magpie routes** | Selected models must exist in the local catalog and be accessible through omp's `magpie` provider. Every model role and delegated subagent must use an explicit `magpie/...` route. |
+| **omp** (or **codex** for `/dispatch-codex`) | Lane runtime. All presets except `/dispatch-codex` require `omp`. `/dispatch-codex` prefers native `codex` CLI and falls back to `omp` (or selects explicitly via `--runtime`). |
+| **Local magpie routes** | Required for `omp` runs. Selected models must exist in the local catalog and be accessible through omp's `magpie` provider. Every model role and delegated subagent must use an explicit `magpie/...` route. |
 | **`python3`, `jq`** | Inspect persisted run and session state. |
 | **`gh`, authenticated** | Optional. Without it, verified branches can be pushed and a PR command is printed for you. |
 | **`origin` remote** | Optional. Without it, lanes stay local with a recorded publication blocker. |
@@ -102,7 +106,7 @@ installed. Plans, questions, and reports are in Chinese; briefs, commits, and PR
 
 | Skill | Model selection (no supplier preference) |
 | --- | --- |
-| `/dispatch-codex` | `gpt-6.2-sol` |
+| `/dispatch-codex` | Dual runtime (`--runtime codex\|omp\|auto`, default `auto`): prefers native `codex` CLI; uses `gpt-6.2-sol` when running `omp` |
 | `/dispatch-glm` | Distinct GLM model identities from the live magpie catalog |
 | `/dispatch-mimo` | Distinct MiMo model identities from the live magpie catalog |
 | `/dispatch-deepseek` | `deepseek-v4.1-flash` |
@@ -112,9 +116,10 @@ installed. Plans, questions, and reports are in Chinese; briefs, commits, and PR
 | `/dispatch-devin` | `swe-2` |
 | `/dispatch-omp` | Generic entry; requires an explicit `--model <model-id>` or exact magpie catalog selector |
 
-The preset mappings live in [the shared routing reference](skills/_shared/routing.md). All nine
-entries execute omp. The names do not select native Codex, GLM, Mimo, DeepSeek, Grok, OpenCode,
-Cursor, or Devin CLIs or suppliers. An unavailable exact model blocks lane creation. For GLM and
+The preset mappings live in [the shared routing reference](skills/_shared/routing.md). `/dispatch-codex`
+supports both native `codex` CLI (preferred default) and `omp` (`--runtime codex|omp|auto`); all
+other eight entries execute `omp` exclusively and do not select native GLM, Mimo, DeepSeek, Grok,
+OpenCode, Cursor, or Devin CLIs or suppliers. An unavailable exact model blocks lane creation. For GLM and
 MiMo, one distinct model is selected, several require a model/version choice, and zero is a blocker.
 An explicit available `--model` overrides any preset; the live magpie catalog decides availability.
 
@@ -144,7 +149,8 @@ Everything that is not a flag is task text. Tasks split on numbered items, newli
 
 | Flag | Meaning | Default |
 | --- | --- | --- |
-| `--model <model-id>` | Model identity resolved through magpie, or any exact magpie chat selector explicitly supplied by the user | Preset model; required for `dispatch-omp` |
+| `--runtime <codex\|omp\|auto>` | (`/dispatch-codex` only) Choose native `codex` CLI, `omp` through `magpie`, or `auto` (prefer `codex`, fall back to `omp`) | `auto` on `/dispatch-codex`; rejected on other skills |
+| `--model <model-id>` | Model identity resolved through magpie, or any exact magpie chat selector explicitly supplied by the user (on native `codex`, passed as `-m <model>`) | Preset model; required for `dispatch-omp`; codex default on native `codex` |
 | `--thinking <level>` | Explicit omp thinking setting; unsupported choices are rejected | `high` when supported, otherwise a catalog-supported level, recorded per lane |
 | `--lanes N` | Cap on concurrent lanes, 1–16 | `16` |
 | `--base <ref>` | Base ref for lane branches | `origin/<current>` if available, else the current branch |
@@ -288,7 +294,8 @@ skills/
 │   ├── plan.md                  # lane plans, worktrees, briefs, and bookkeeping
 │   └── supervise.md             # resume, acceptance, publication, timer, and report
 ├── dispatch-omp/                # generic explicit-model entry
-├── dispatch-codex/
+├── dispatch-codex/                # dual runtime: native codex (preferred) or omp
+│   └── references/codex-driver.md # native codex CLI launch and session protocol
 ├── dispatch-glm/
 ├── dispatch-mimo/
 ├── dispatch-deepseek/
